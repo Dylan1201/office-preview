@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "1.0.0",
+  "npmClient": "npm",
+  "packages": [
+    "packages/*",
+    "core"
+  ],
+  "command": {
+    "publish": {
+      "message": "chore(release): publish %s",
+      "registry": "http://localhost:4873"
+    },
+    "bootstrap": {
+      "ignore": "vue3-demo",
+      "npmClientArgs": ["--no-lockfile"]
+    }
+  }
+}

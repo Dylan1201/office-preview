@@ -1,0 +1,39 @@
+{
+  "name": "@vue3-office/docx",
+  "version": "1.0.0",
+  "description": "Vue3 Word文档预览组件",
+  "main": "lib/index.umd.js",
+  "module": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "clean": "rimraf lib",
+    "build": "npm run clean && vite build"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  },
+  "dependencies": {
+    "docx-preview": "^0.3.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.2",
+    "vite": "^5.0.0",
+    "vue": "^3.3.8"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "docx",
+    "word",
+    "preview",
+    "预览"
+  ],
+  "author": "Emperor's Dev",
+  "license": "MIT"
+}

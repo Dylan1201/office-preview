@@ -1,0 +1,45 @@
+{
+  "name": "@vue3-office/excel",
+  "version": "1.0.0",
+  "description": "Vue3 Excel文档预览组件",
+  "main": "lib/index.umd.js",
+  "module": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "clean": "rimraf lib",
+    "build": "npm run clean && vite build"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "tinycolor2": "^1.6.0",
+    "dayjs": "^1.11.10",
+    "lodash": "^4.17.21",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.202",
+    "@types/tinycolor2": "^1.4.6",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.2",
+    "vite": "^5.0.0",
+    "vue": "^3.3.8"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "excel",
+    "xlsx",
+    "preview",
+    "预览"
+  ],
+  "author": "Emperor's Dev",
+  "license": "MIT"
+}

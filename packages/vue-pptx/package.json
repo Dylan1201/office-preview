@@ -1,0 +1,41 @@
+{
+  "name": "@vue3-office/pptx",
+  "version": "1.0.0",
+  "description": "Vue3 PPT文档预览组件",
+  "main": "lib/index.umd.js",
+  "module": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "clean": "rimraf lib",
+    "build": "npm run clean && vite build"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/jszip": "^3.4.1",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.2",
+    "vite": "^5.0.0",
+    "vue": "^3.3.8"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "pptx",
+    "ppt",
+    "powerpoint",
+    "preview",
+    "预览"
+  ],
+  "author": "Emperor's Dev",
+  "license": "MIT"
+}

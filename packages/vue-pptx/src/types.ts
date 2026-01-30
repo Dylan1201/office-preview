@@ -1,0 +1,138 @@
+/**
+ * PPT渲染选项
+ */
+export interface PptxOptions {
+  /** 容器宽度 */
+  width?: number
+  /** 容器高度 */
+  height?: number
+  /** 是否显示控制栏 */
+  showControls?: boolean
+}
+
+/**
+ * 组件Props
+ */
+export interface PptxProps {
+  /** 文件源 */
+  src: string | ArrayBuffer | Blob
+  /** 请求配置 */
+  requestOptions?: RequestInit
+  /** 渲染选项 */
+  options?: PptxOptions
+}
+
+/**
+ * 组件事件
+ */
+export interface PptxEmits {
+  /** 渲染完成 */
+  (event: 'rendered', pptx?: PPTXPresentation): void
+  /** 渲染错误 */
+  (event: 'error', error: Error): void
+  /** 幻灯片切换 */
+  (event: 'slideChange', index: number): void
+}
+
+/**
+ * PPTX幻灯片元素类型
+ */
+export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group'
+
+/**
+ * PPTX元素基类
+ */
+export interface PPTXElement {
+  type: PPTXElementType
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation?: number
+  zIndex?: number
+}
+
+/**
+ * 文本元素
+ */
+export interface PPTXTextElement extends PPTXElement {
+  type: 'text'
+  text: string
+  style: PPTXTextStyle
+}
+
+/**
+ * 文本样式
+ */
+export interface PPTXTextStyle {
+  fontSize?: number
+  fontFamily?: string
+  color?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  align?: 'left' | 'center' | 'right' | 'justify'
+  verticalAlign?: 'top' | 'middle' | 'bottom'
+}
+
+/**
+ * 图片元素
+ */
+export interface PPTXImageElement extends PPTXElement {
+  type: 'image'
+  src: string
+  contentType?: string
+}
+
+/**
+ * 形状元素
+ */
+export interface PPTXShapeElement extends PPTXElement {
+  type: 'shape'
+  shapeType?: string
+  fill?: string
+  stroke?: string
+  strokeWidth?: number
+}
+
+/**
+ * PPTX幻灯片
+ */
+export interface PPTXSlide {
+  id: string
+  index: number
+  elements: PPTXElement[]
+  layout?: PPTXLayout
+  background?: PPTXBackground
+  width: number
+  height: number
+}
+
+/**
+ * PPTX布局
+ */
+export interface PPTXLayout {
+  name?: string
+  type?: string
+}
+
+/**
+ * PPTX背景
+ */
+export interface PPTXBackground {
+  type?: 'solid' | 'gradient' | 'image'
+  color?: string
+  src?: string
+}
+
+/**
+ * PPTX演示文稿
+ */
+export interface PPTXPresentation {
+  slides: PPTXSlide[]
+  width: number
+  height: number
+  title?: string
+  author?: string
+}

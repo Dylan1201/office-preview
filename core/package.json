@@ -1,0 +1,25 @@
+{
+  "name": "@vue3-office/core",
+  "version": "1.0.0",
+  "description": "Vue3 Office预览插件 - 共享工具库",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.2"
+  },
+  "keywords": [
+    "vue",
+    "office",
+    "utils"
+  ],
+  "author": "Emperor's Dev",
+  "license": "MIT"
+}
