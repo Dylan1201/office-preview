@@ -15,7 +15,8 @@
     "build:pptx": "lerna run build --scope @vue3-office/pptx",
     "clean": "lerna clean",
     "lint": "eslint packages/*/src --ext .ts,.vue",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "publish:all": "cd core && npm publish --registry http://localhost:4873 && cd ../packages/vue-docx && npm publish --registry http://localhost:4873 && cd ../vue-excel && npm publish --registry http://localhost:4873 && cd ../vue-pptx && npm publish --registry http://localhost:4873"
   },
   "keywords": [
     "vue",

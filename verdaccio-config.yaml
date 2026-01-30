@@ -1,0 +1,13 @@
+# Verdaccio配置提示
+# 皇上，您的verdaccio需要认证才能发布
+# 请在docker运行的verdaccio容器中添加以下配置允许匿名发布：
+
+# 在verdaccio配置中添加：
+# publish:
+#   allow_actions: ['publish']
+
+# 或者，您可以先登录verdaccio：
+# npm adduser --registry http://localhost:4873
+# # 输入用户名: admin
+# # 输入密码: (您设置的密码)
+# # 输入邮箱: admin@example.com
