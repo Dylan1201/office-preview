@@ -7,9 +7,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@vue3-office/docx': resolve(__dirname, '../../packages/vue-docx/src'),
-      '@vue3-office/excel': resolve(__dirname, '../../packages/vue-excel/src'),
-      '@vue3-office/pptx': resolve(__dirname, '../../packages/vue-pptx/src')
+      '@vue3-office/docx': resolve(__dirname, '../../packages/vue-docx/src/index.ts'),
+      '@vue3-office/excel': resolve(__dirname, '../../packages/vue-excel/src/index.ts'),
+      '@vue3-office/pptx': resolve(__dirname, '../../packages/vue-pptx/src/index.ts')
     }
   },
   server: {

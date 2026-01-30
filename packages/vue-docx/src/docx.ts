@@ -1,10 +1,29 @@
 /* eslint-disable */
-import { renderAsync } from 'docx-preview'
+import * as docxPreview from 'docx-preview'
 import type { DocxOptions } from './types'
 
+const renderAsync = docxPreview.renderAsync
+
 const defaultOptions: DocxOptions = {
+  inWrapper: true,
+  ignoreWidth: false,
+  ignoreHeight: false,
+  ignoreFonts: false,
+  breakPages: true,
+  debug: false,
+  experimental: false,
+  trimXmlDeclaration: true,
   ignoreLastRenderedPageBreak: false,
-  experimental: true
+  useBase64URL: false,
+  className: 'docx-preview',
+  renderHeaders: false,
+  renderFooters: false,
+  renderFootnotes: false,
+  renderEndnotes: false,
+  renderChanges: false,
+  renderComments: false,
+  renderAltChunks: false,
+  hideWrapperOnPrint: false
 }
 
 /**
@@ -51,6 +70,8 @@ export async function render(
   container: HTMLElement,
   options: DocxOptions = {}
 ): Promise<void> {
+  console.log('[docx render] start')
+
   if (!data) {
     container.innerHTML = ''
     return Promise.resolve()
@@ -67,8 +88,32 @@ export async function render(
     throw new Error('Invalid data type')
   }
 
-  return renderAsync(blob, container, container, {
+  const renderOptions = {
     ...defaultOptions,
     ...options
-  })
+  }
+
+  console.log('[docx render] blob size:', blob.size)
+
+  try {
+    // 清空容器
+    container.innerHTML = ''
+
+    // 创建一个新的div作为渲染容器
+    const docxContainer = document.createElement('div')
+    docxContainer.className = 'docx-wrapper'
+    container.appendChild(docxContainer)
+
+    // 调用renderAsync: renderAsync(data, bodyContainer, styleContainer, options)
+    // styleContainer也使用docxContainer,或者创建一个style元素
+    const styleElement = document.createElement('div')
+    await renderAsync(blob, docxContainer, styleElement, renderOptions)
+
+    console.log('[docx render] finished, container children:', container.children.length)
+    console.log('[docx render] docxContainer innerHTML length:', docxContainer.innerHTML.length)
+
+  } catch (error) {
+    console.error('[docx render] error:', error)
+    throw error
+  }
 }

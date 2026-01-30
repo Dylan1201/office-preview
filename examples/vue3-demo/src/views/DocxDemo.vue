@@ -23,8 +23,13 @@
 </template>
 
 <script setup lang="ts">
+console.log('[DocxDemo] Script setup started')
+
 import { ref } from 'vue'
-import VueOfficeDocx from '@vue3-office/docx'
+import { VueOfficeDocx } from '@vue3-office/docx'
+
+console.log('[DocxDemo] VueOfficeDocx imported:', VueOfficeDocx)
+console.log('[DocxDemo] VueOfficeDocx type:', typeof VueOfficeDocx)
 
 const docxUrl = ref('')
 const currentSrc = ref<string | ArrayBuffer>('')
@@ -32,33 +37,40 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const status = ref('')
 
 const handleFileChange = (event: Event) => {
+  console.log('[DocxDemo] handleFileChange called')
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
 
+  console.log('[DocxDemo] File selected:', file.name, file.size)
   status.value = '正在加载...'
   const reader = new FileReader()
   reader.onload = (e) => {
+    console.log('[DocxDemo] FileReader onload, result type:', typeof e.target?.result)
     currentSrc.value = e.target?.result as ArrayBuffer
     status.value = ''
   }
   reader.onerror = () => {
+    console.error('[DocxDemo] FileReader error')
     status.value = '文件加载失败'
   }
   reader.readAsArrayBuffer(file)
 }
 
 const loadUrl = () => {
+  console.log('[DocxDemo] loadUrl called:', docxUrl.value)
   if (!docxUrl.value) return
   currentSrc.value = docxUrl.value
 }
 
 const onRendered = () => {
+  console.log('[DocxDemo] onRendered called')
   status.value = '渲染完成'
   setTimeout(() => status.value = '', 2000)
 }
 
 const onError = (e: Error) => {
+  console.error('[DocxDemo] onError:', e)
   status.value = '渲染失败: ' + e.message
 }
 </script>
