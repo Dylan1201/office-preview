@@ -333,7 +333,9 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
       }
 
       const cells = row._cells ? Array.from(row._cells).filter(c => c) : []
-      cells.forEach((cell, colIndex) => {
+      cells.forEach((cell) => {
+        // 使用cell的实际列号，而不是数组索引
+        const colIndex = cell.col - 1  // ExcelJS的col是从1开始的
         sheetData.rows[rowIndex].cells[colIndex] = {}
         effectiveMaxColLen = Math.max(effectiveMaxColLen, colIndex)
 
