@@ -893,6 +893,193 @@ if (fragment.backgroundColor) {
 
 ---
 
+## 🎬 2026年1月31日 - PPT视频播放支持
+
+### 功能背景
+PPT文件中可能包含视频元素，需要在Web端正确播放。之前PPT预览只支持文本、图片和形状元素，不支持视频。
+
+### 实现方案
+
+#### 1. 类型定义扩展
+
+**修改types.ts - 新增视频元素类型**
+```typescript
+// 添加video到元素类型
+export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group' | 'video'
+
+// 定义视频元素接口
+export interface PPTXVideoElement extends PPTXElement {
+  type: 'video'
+  src: string           // 视频文件URL
+  contentType?: string  // MIME类型 (video/mp4, video/webm等)
+  poster?: string       // 封面图URL
+  videoRelId?: string   // 视频关系ID (内部解析用)
+  posterRelId?: string  // 封面图关系ID (内部解析用)
+}
+```
+
+#### 2. 视频元素解析
+
+**修改slide.ts - 新增视频解析函数**
+
+视频元素在PPTX XML中以`p:pic`形式存在，需要通过以下特征识别：
+1. `p:cNvPr`的`name`属性包含"video"
+2. `p:nvPr`下有`a:videoFile`元素
+
+```typescript
+/**
+ * 检测是否为视频元素
+ */
+function isVideoElement(pic: Element): boolean {
+  let nvPicPr = pic.getElementsByTagName('p:nvPicPr')[0]
+  if (!nvPicPr) return false
+
+  // 检查name属性是否包含"video"
+  let cNvPr = nvPicPr.getElementsByTagName('p:cNvPr')[0]
+  if (cNvPr) {
+    const name = cNvPr.getAttribute('name') || ''
+    if (name.toLowerCase().includes('video')) {
+      return true
+    }
+  }
+
+  // 检查是否有videoFile元素
+  let nvPr = nvPicPr.getElementsByTagName('p:nvPr')[0]
+  if (nvPr) {
+    const videoFile = nvPr.getElementsByTagName('a:videoFile')[0]
+    if (videoFile) return true
+  }
+
+  return false
+}
+
+/**
+ * 解析视频元素
+ */
+function parseVideoElement(pic: Element, theme: any): PPTXElement | null {
+  // 获取位置和尺寸
+  const x = getUnitValue(off)
+  const y = getUnitValue(off)
+  const width = getUnitValue(cx)
+  const height = getUnitValue(cy)
+
+  // 获取视频关系ID
+  let videoFile = nvPr?.getElementsByTagName('a:videoFile')[0]
+  const videoRelId = videoFile?.getAttribute('r:link')
+
+  // 获取封面图关系ID
+  const posterRelId = blip?.getAttribute('r:embed')
+
+  return {
+    type: 'video',
+    id,
+    x, y, width, height,
+    src: '',              // 将在解析器中填充
+    videoRelId,
+    posterRelId
+  }
+}
+```
+
+#### 3. 视频文件提取
+
+**修改index.ts - 扩展媒体文件解析**
+
+```typescript
+// 更新图片和视频元素
+for (const element of slide.elements) {
+  if (element.type === 'video') {
+    const videoElement = element as any
+
+    // 处理视频文件
+    if (videoRelId && mediaMap.has(videoRelId)) {
+      let videoPath = mediaMap.get(videoRelId)!
+      const fullPath = `ppt/${videoPath}`
+      const videoFile = this.zip!.file(fullPath)
+
+      if (videoFile) {
+        const blob = await videoFile.async('blob')
+        videoElement.src = URL.createObjectURL(blob)
+        videoElement.contentType = this.getVideoContentType(fullPath)
+      }
+    }
+
+    // 处理封面图
+    if (posterRelId && mediaMap.has(posterRelId)) {
+      const posterBlob = await posterFile.async('blob')
+      videoElement.poster = URL.createObjectURL(posterBlob)
+    }
+  }
+}
+
+/**
+ * 根据文件扩展名获取视频MIME类型
+ */
+private getVideoContentType(filePath: string): string | undefined {
+  const ext = filePath.toLowerCase().split('.').pop()
+  const videoTypes = {
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'ogg': 'video/ogg',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    // ...
+  }
+  return videoTypes[ext || '']
+}
+```
+
+#### 4. 视频渲染
+
+**修改renderer/index.ts - 新增视频渲染函数**
+
+```typescript
+/**
+ * 渲染视频元素
+ */
+private renderVideoElement(element: PPTXVideoElement): HTMLElement {
+  const videoContainer = document.createElement('div')
+  videoContainer.className = 'pptx-video-container'
+  videoContainer.style.position = 'absolute'
+  videoContainer.style.left = `${element.x}px`
+  videoContainer.style.top = `${element.y}px`
+  videoContainer.style.width = `${element.width}px`
+  videoContainer.style.height = `${element.height}px`
+  videoContainer.style.overflow = 'hidden'
+  videoContainer.style.backgroundColor = '#000'
+
+  const videoEl = document.createElement('video')
+  videoEl.className = 'pptx-video'
+  videoEl.style.width = '100%'
+  videoEl.style.height = '100%'
+  videoEl.style.objectFit = 'contain'
+  videoEl.controls = true        // 显示播放控制
+  videoEl.preload = 'metadata'   // 预加载元数据
+
+  if (element.src) videoEl.src = element.src
+  if (element.poster) videoEl.poster = element.poster
+
+  videoContainer.appendChild(videoEl)
+  return videoContainer
+}
+```
+
+### 功能特性
+
+- ✅ **自动检测视频元素** - 通过XML结构自动识别PPT中的视频
+- ✅ **支持多种视频格式** - mp4、webm、ogg、avi、mov、wmv、flv、mkv
+- ✅ **封面图支持** - 如果PPT中有视频封面图，会正确显示
+- ✅ **HTML5原生播放** - 使用浏览器原生video标签，支持所有HTML5视频特性
+- ✅ **保持原始位置和尺寸** - 视频在幻灯片中的位置和大小与源文件一致
+
+### 相关文件
+- [`packages/vue-pptx/src/types.ts`](packages/vue-pptx/src/types.ts:99-106) - PPTXVideoElement类型定义
+- [`packages/vue-pptx/src/parser/slide.ts`](packages/vue-pptx/src/parser/slide.ts:209-302) - 视频元素解析
+- [`packages/vue-pptx/src/parser/index.ts`](packages/vue-pptx/src/parser/index.ts:90-192) - 视频文件提取
+- [`packages/vue-pptx/src/renderer/index.ts`](packages/vue-pptx/src/renderer/index.ts:179-209) - 视频渲染
+
+---
+
 *生成时间: 2025年1月30日*
 *开发者: Claude Sonnet 4.5*
 *更新时间: 2026年1月31日*
