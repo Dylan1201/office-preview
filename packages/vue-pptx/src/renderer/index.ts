@@ -169,7 +169,7 @@ export class PPTXRenderer {
     imgEl.style.top = `${element.y}px`
     imgEl.style.width = `${element.width}px`
     imgEl.style.height = `${element.height}px`
-    imgEl.style.objectFit = 'contain'
+    imgEl.style.objectFit = 'cover'
     imgEl.src = element.src
 
     return imgEl
