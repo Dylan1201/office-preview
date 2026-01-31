@@ -17,10 +17,10 @@
       <div class="sheet-container">
         <table class="excel-table" :style="tableStyle">
           <tbody>
-            <tr v-for="(row, ri) in currentData.rows" :key="ri">
+            <tr v-for="(row, ri) in currentData.rowsArray" :key="ri">
               <th class="row-header">{{ ri + 1 }}</th>
               <td
-                v-for="(cell, ci) in row.cells"
+                v-for="(cell, ci) in getSortedCells(row.cells)"
                 :key="ci"
                 :style="getCellStyle(cell)"
                 :colspan="cell.merge?.[1] + 1"
@@ -60,24 +60,38 @@ const defaultOptions = {
   minColLength: 20
 }
 
-const hasData = computed(() => allSheets.value.length > 0 && allSheets.value[0].rows)
+const hasData = computed(() => allSheets.value.length > 0 && allSheets.value[0].rows && Object.keys(allSheets.value[0].rows).length > 0)
 
-const currentData = computed(() => allSheets.value[currentSheet.value] || { rows: {} })
+const currentData = computed(() => {
+  const sheet = allSheets.value[currentSheet.value]
+  if (!sheet || !sheet.rows) return { rows: [], rowsArray: [] }
+  // 将对象转换为数组，按索引排序
+  const rowsArray = Object.keys(sheet.rows)
+    .map(k => parseInt(k))
+    .filter(k => !isNaN(k))
+    .sort((a, b) => a - b)
+    .map(k => sheet.rows[k])
+  return {
+    ...sheet,
+    rowsArray
+  }
+})
 
 const sheetNames = computed(() => allSheets.value.map(s => s.name || 'Sheet'))
 
 const tableStyle = computed(() => {
-  const rows = Object.values(currentData.value.rows || {})
+  const rows = currentData.value.rowsArray || []
   if (rows.length === 0) return {}
 
   // 计算列宽
-  const colWidths: number[] = []
   let maxCols = 0
   rows.forEach((row: any) => {
-    const cells = Object.values(row.cells || {})
-    cells.forEach((cell: any) => {
-      const colIndex = parseInt(Object.keys(row.cells || {}).find(k => (row.cells || {})[k] === cell) || '0')
-      maxCols = Math.max(maxCols, colIndex + 1)
+    if (!row || !row.cells) return
+    Object.keys(row.cells).forEach((colKey) => {
+      const colIndex = parseInt(colKey)
+      if (!isNaN(colIndex)) {
+        maxCols = Math.max(maxCols, colIndex + 1)
+      }
     })
   })
 
@@ -105,6 +119,16 @@ function getCellStyle(cell: any): any {
   }
 
   return styles
+}
+
+function getSortedCells(cells: any): any[] {
+  if (!cells) return []
+  return Object.keys(cells)
+    .map(k => parseInt(k))
+    .filter(k => !isNaN(k))
+    .sort((a, b) => a - b)
+    .map(k => cells[k])
+    .filter(cell => cell !== undefined)
 }
 
 function switchSheet(index: number) {
