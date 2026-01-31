@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import VueOfficeExcel from '@vue3-office/excel'
+import { VueOfficeExcel } from '@vue3-office/excel'
 
 const excelUrl = ref('')
 const currentSrc = ref<string | ArrayBuffer>('')

@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import VueOfficePptx from '@vue3-office/pptx'
+import { VueOfficePptx } from '@vue3-office/pptx'
 
 const pptxUrl = ref('')
 const currentSrc = ref<string | ArrayBuffer>('')
