@@ -19,9 +19,7 @@ function processPages(docxContainer: HTMLElement): void {
   // docx-preview 渲染的结构是: .docx-preview-wrapper > section.docx-preview
   const sections = docxContainer.querySelectorAll('section')
 
-  console.log(`\n[Page Analysis] Found ${sections.length} page(s)`)
-
-  sections.forEach((section, index) => {
+  sections.forEach((section) => {
     const el = section as HTMLElement
 
     // 只给页面本身设置白色背景，不使用!important避免覆盖子元素
@@ -38,31 +36,14 @@ function processPages(docxContainer: HTMLElement): void {
     const hasTables = el.querySelectorAll('table').length > 0
     const reallyEmpty = !hasContent && !hasImages && !hasTables
 
-    console.log(`Page ${index + 1}:`, {
-      textLength: textContent.length,
-      textPreview: textContent.substring(0, 50),
-      hasContent,
-      hasImages,
-      hasTables,
-      reallyEmpty,
-      offsetHeight: el.offsetHeight,
-      scrollHeight: el.scrollHeight
-    })
-
     // 只依赖内容判断，不依赖高度（空白页也有A4高度的min-height）
     if (reallyEmpty) {
       el.style.display = 'none'
-      console.log(`  → Hidden empty page ${index + 1}`)
     }
 
     // 处理引用段落合并
     mergeQuoteParagraphs(el)
   })
-
-  console.log(`[processPages] processed ${sections.length} page(s)`)
-
-  // 打印换行符调试信息
-  debugLineBreaks(docxContainer)
 }
 
 /**
@@ -83,8 +64,6 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
   })
 
   if (quoteParagraphs.length === 0) return
-
-  console.log(`  Found ${quoteParagraphs.length} quote paragraph(s)`)
 
   // 找出连续的引用段落组
   const groups: HTMLElement[][] = []
@@ -109,10 +88,8 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
     groups.push(currentGroup)
   }
 
-  console.log(`  Found ${groups.length} quote group(s)`)
-
   // 合并每组引用段落
-  groups.forEach((group, groupIndex) => {
+  groups.forEach((group) => {
     if (group.length < 2) return  // 只有1个段落的不需要合并
     const first = group[0] as HTMLElement
     const parent = first.parentNode
@@ -156,49 +133,7 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
       // 没有前一个兄弟节点，插入到父节点的开头
       parent.insertBefore(quoteContainer, parent.firstChild)
     }
-
-    console.log(`  Merged ${group.length} quote paragraphs into container`)
   })
-}
-
-/**
- * 调试换行符和段落换行
- */
-function debugLineBreaks(docxContainer: HTMLElement): void {
-  console.log('\n[Line Break Debug] Starting analysis...')
-
-  // 打印第一页的完整HTML数据
-  const firstSection = docxContainer.querySelector('section')
-  if (firstSection) {
-    console.log('\n[First Page HTML Data]')
-    console.log('========================================')
-    console.log('First section HTML:')
-    console.log(firstSection.innerHTML)
-    console.log('========================================\n')
-  }
-
-  // 统计换行相关元素
-  const paragraphs = docxContainer.querySelectorAll('p')
-  console.log(`Found ${paragraphs.length} paragraphs total`)
-
-  // 统计br元素
-  const brElements = docxContainer.querySelectorAll('br')
-  console.log(`Total <br> elements: ${brElements.length}`)
-
-  // 统计不同类型的换行符
-  let manualLineBreaks = 0
-  let softReturns = 0
-
-  paragraphs.forEach((p) => {
-    const html = p.innerHTML
-    if (html.includes('<br')) manualLineBreaks++
-    if (html.includes('\n') || html.includes('\r')) softReturns++
-  })
-
-  console.log(`Paragraphs with <br>: ${manualLineBreaks}`)
-  console.log(`Paragraphs with \\n/\\r: ${softReturns}`)
-
-  console.log('[Line Break Debug] Analysis complete\n')
 }
 
 const defaultOptions: DocxOptions = {
@@ -267,8 +202,6 @@ export async function render(
   container: HTMLElement,
   options: DocxOptions = {}
 ): Promise<void> {
-  console.log('[docx render] start')
-
   if (!data) {
     container.innerHTML = ''
     return Promise.resolve()
@@ -290,8 +223,6 @@ export async function render(
     ...options
   }
 
-  console.log('[docx render] blob size:', blob.size)
-
   try {
     // 清空容器
     container.innerHTML = ''
@@ -304,9 +235,6 @@ export async function render(
     // 调用renderAsync: renderAsync(data, bodyContainer, styleContainer, options)
     const styleElement = document.createElement('div')
     await renderAsync(blob, docxContainer, styleElement, renderOptions)
-
-    console.log('[docx render] finished, container children:', container.children.length)
-    console.log('[docx render] docxContainer innerHTML length:', docxContainer.innerHTML.length)
 
     // 渲染完成后，处理每一页的样式
     await nextTick()
