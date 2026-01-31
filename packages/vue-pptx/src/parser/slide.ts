@@ -1,9 +1,5 @@
 import type { PPTXSlide, PPTXElement, PPTXVideoElement } from '../types'
-import { getElementText, parseColor, getUnitValue, setLogger } from './element'
-import { log } from './logger'
-
-// 设置日志函数
-setLogger(log)
+import { getElementText, parseColor, getUnitValue } from './element'
 
 /**
  * 解析幻灯片XML
@@ -163,11 +159,6 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     let fragments: Array<{ text: string; color?: string }> | undefined
     if (p) {
       fragments = parseTextFragments(p, theme)
-      // 记录文本片段颜色信息
-      if (fragments && fragments.length > 0) {
-        const fragInfo = fragments.map(f => `${f.text}(${f.color || '?'})`).join('')
-        log(`[TEXT] "${text?.substring(0, 30)}" => ${fragInfo}`)
-      }
     }
 
     // 如果文本不为空，创建文本元素
@@ -411,8 +402,6 @@ function parseVideoElement(pic: Element, theme: any): PPTXElement | null {
     posterRelId: posterRelId || undefined
   } as any
 
-  log(`[VIDEO] Parsed video element: ${id}, videoRelId: ${videoRelId}, posterRelId: ${posterRelId}`)
-
   return videoElement
 }
 
@@ -564,7 +553,6 @@ function parseTextFragments(p: Element, theme: any): Array<{ text: string; color
               }
             }
             color = closestColor.color
-            log(`[COLOR] Text gradient: ${gradient.colors.map(c => `${c.pos}:${c.color}`).join(', ')} => using ${closestColor.pos}:${closestColor.color}`)
           }
         }
       }
@@ -600,9 +588,6 @@ function parseTextFragments(p: Element, theme: any): Array<{ text: string; color
 
         if (highlightFill) {
           backgroundColor = parseColor(highlightFill, theme)
-          if (backgroundColor) {
-            log(`[COLOR] Text background (highlight): ${backgroundColor}`)
-          }
         }
       }
     }
@@ -719,7 +704,6 @@ function parseTextStyle(txBody: Element, theme: any): any {
             }
             style.color = closestColor.color
             style.gradient = gradient
-            log(`[TEXT GRADIENT] ${gradient.colors.map(c => `${c.pos}:${c.color}`).join(', ')} => using ${closestColor.pos}:${closestColor.color}`)
           }
         }
       }

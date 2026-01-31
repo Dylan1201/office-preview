@@ -1,13 +1,14 @@
 <template>
   <div class="demo-page">
     <div class="demo-controls">
-      <input type="file" ref="fileInput" accept=".pptx" @change="handleFileChange" style="display: none">
-      <button class="btn" @click="$refs.fileInput?.click()">选择文件</button>
       <input
-        v-model="pptxUrl"
-        placeholder="输入URL"
-        class="input"
-      >
+        type="file"
+        ref="fileInput"
+        accept=".pptx"
+        @change="handleFileChange"
+        style="display: none" />
+      <button class="btn" @click="$refs.fileInput?.click()">选择文件</button>
+      <input v-model="pptxUrl" placeholder="输入URL" class="input" />
       <button class="btn" @click="loadUrl">加载URL</button>
       <div class="zoom-controls">
         <button class="btn btn-zoom" @click="zoomOut">-</button>
@@ -20,75 +21,79 @@
       {{ status }}
     </div>
     <div class="demo-preview" v-if="currentSrc" :style="{ zoom: zoom }">
-      <vue-office-pptx :src="currentSrc" @rendered="onRendered" @error="onError" @slideChange="onSlideChange" />
+      <vue-office-pptx
+        :src="currentSrc"
+        @rendered="onRendered"
+        @error="onError"
+        @slideChange="onSlideChange" />
     </div>
-    <div class="demo-placeholder" v-else>
-      请选择文件或输入URL
-    </div>
+    <div class="demo-placeholder" v-else>请选择文件或输入URL</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { VueOfficePptx } from '@vue3-office/pptx'
+import { ref } from 'vue';
+import { VueOfficePptx } from '@vue3-office/pptx';
 
-const pptxUrl = ref('')
-const currentSrc = ref<string | ArrayBuffer>('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const status = ref('')
-const zoom = ref(1)
+const pptxUrl = ref(
+  'http://localhost:6688/office/%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF1.pptx'
+);
+const currentSrc = ref<string | ArrayBuffer>('');
+const fileInput = ref<HTMLInputElement | null>(null);
+const status = ref('');
+const zoom = ref(1);
 
 const zoomIn = () => {
   if (zoom.value < 2) {
-    zoom.value = Math.min(2, zoom.value + 0.1)
+    zoom.value = Math.min(2, zoom.value + 0.1);
   }
-}
+};
 
 const zoomOut = () => {
   if (zoom.value > 0.5) {
-    zoom.value = Math.max(0.5, zoom.value - 0.1)
+    zoom.value = Math.max(0.5, zoom.value - 0.1);
   }
-}
+};
 
 const resetZoom = () => {
-  zoom.value = 1
-}
+  zoom.value = 1;
+};
 
 const handleFileChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (!file) return
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
 
-  status.value = '正在加载...'
-  const reader = new FileReader()
+  status.value = '正在加载...';
+  const reader = new FileReader();
   reader.onload = (e) => {
-    currentSrc.value = e.target?.result as ArrayBuffer
-    status.value = ''
-  }
+    currentSrc.value = e.target?.result as ArrayBuffer;
+    status.value = '';
+  };
   reader.onerror = () => {
-    status.value = '文件加载失败'
-  }
-  reader.readAsArrayBuffer(file)
-}
+    status.value = '文件加载失败';
+  };
+  reader.readAsArrayBuffer(file);
+};
 
 const loadUrl = () => {
-  if (!pptxUrl.value) return
-  currentSrc.value = pptxUrl.value
-}
+  if (!pptxUrl.value) return;
+  currentSrc.value = pptxUrl.value;
+};
 
 const onRendered = () => {
-  status.value = '渲染完成'
-  setTimeout(() => status.value = '', 2000)
-}
+  status.value = '渲染完成';
+  setTimeout(() => (status.value = ''), 2000);
+};
 
 const onError = (e: Error) => {
-  status.value = '渲染失败: ' + e.message
-}
+  status.value = '渲染失败: ' + e.message;
+};
 
 const onSlideChange = (index: number) => {
-  status.value = `幻灯片 ${index + 1}`
-  setTimeout(() => status.value = '', 2000)
-}
+  status.value = `幻灯片 ${index + 1}`;
+  setTimeout(() => (status.value = ''), 2000);
+};
 </script>
 
 <style scoped>

@@ -1,10 +1,3 @@
-// 导入日志函数
-let logFn: (message: string, data?: any) => void = () => {}
-
-export function setThemeLogger(fn: (message: string, data?: any) => void) {
-  logFn = fn
-}
-
 /**
  * 解析主题XML
  */
@@ -79,15 +72,6 @@ export function parseThemeXML(xmlString: string): any {
           }
         }
       }
-    }
-
-    // 输出解析的主题颜色
-    const colorKeys = Object.keys(theme.colors)
-    if (colorKeys.length > 0) {
-      logFn('[THEME] Parsed theme colors:')
-      colorKeys.forEach(k => {
-        logFn(`[THEME]   ${k}: ${theme.colors[k]}`)
-      })
     }
   }
 

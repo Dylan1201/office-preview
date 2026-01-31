@@ -32,13 +32,6 @@ export function getElementText(txBody: Element): string {
   return texts.join('\n')
 }
 
-// 导入日志函数
-let logFn: (message: string, data?: any) => void = () => {}
-
-export function setLogger(fn: (message: string, data?: any) => void) {
-  logFn = fn
-}
-
 /**
  * 解析颜色
  */
@@ -49,7 +42,6 @@ export function parseColor(element: Element, theme: any): string {
                 element.getElementsByTagName('srgbClr')[0]
   if (srgbClr) {
     const color = '#' + srgbClr.getAttribute('val')
-    logFn(`[COLOR] Direct RGB: ${color}`)
     return color
   }
 
@@ -148,16 +140,12 @@ export function parseColor(element: Element, theme: any): string {
 
     // 应用lumMod和lumOff
     if (lumModValue !== 100000 || lumOffValue !== 0) {
-      const color = applyLumModOff(baseColor, lumModValue, lumOffValue)
-      logFn(`[COLOR] Theme: ${colorName} (${baseColor}) + lumMod=${lumModValue/1000}% lumOff=${lumOffValue/1000}% => ${color}`)
-      return color
+      return applyLumModOff(baseColor, lumModValue, lumOffValue)
     }
 
-    logFn(`[COLOR] Theme: ${colorName} => ${baseColor}`)
     return baseColor
   }
 
-  logFn('[COLOR] No color found, using #000000')
   return '#000000'
 }
 

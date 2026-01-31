@@ -1,13 +1,8 @@
 import JSZip from 'jszip'
 import type { PPTXPresentation, PPTXSlide, PPTXElement } from '../types'
 import { parseSlideXML } from './slide'
-import { parseThemeXML, setThemeLogger } from './theme'
-import { getElementText, parseColor, getUnitValue, setLogger } from './element'
-import { dumpLogs, log } from './logger'
-
-// 设置日志函数
-setLogger(log)
-setThemeLogger(log)
+import { parseThemeXML } from './theme'
+import { getElementText, parseColor, getUnitValue } from './element'
 
 /**
  * PPTX解析器
@@ -31,9 +26,6 @@ export class PPTXParser {
 
       // 解析幻灯片（传入尺寸）
       const slides = await this.parseSlides(width, height)
-
-      // 输出解析日志到控制台
-      dumpLogs()
 
       return {
         slides,
@@ -172,7 +164,6 @@ export class PPTXParser {
             if (contentType) {
               videoElement.contentType = contentType
             }
-            log(`[VIDEO] Loaded video: ${fullPath}, type: ${contentType}`)
           }
         }
 
@@ -194,7 +185,6 @@ export class PPTXParser {
           if (posterFile) {
             const blob = await posterFile.async('blob')
             videoElement.poster = URL.createObjectURL(blob)
-            log(`[VIDEO] Loaded poster: ${fullPath}`)
           }
         }
       }
