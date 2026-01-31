@@ -319,7 +319,8 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
     let effectiveMaxColLen = 0
 
     // 遍历行
-    (sheet._rows || []).forEach((row, rowIndex) => {
+    const rows = sheet._rows ? Array.from(sheet._rows) : []
+    rows.forEach((row, rowIndex) => {
       sheetData.rows[rowIndex] = { cells: {} }
 
       if (row._hidden) {
@@ -331,7 +332,8 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
         sheetData.rows[rowIndex].height = defaultRowHeight + (options.heightOffset || 0)
       }
 
-      (row._cells || []).forEach((cell, colIndex) => {
+      const cells = row._cells ? Array.from(row._cells) : []
+      cells.forEach((cell, colIndex) => {
         sheetData.rows[rowIndex].cells[colIndex] = {}
         effectiveMaxColLen = Math.max(effectiveMaxColLen, colIndex)
 
