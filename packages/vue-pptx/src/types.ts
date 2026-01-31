@@ -37,7 +37,7 @@ export interface PptxEmits {
 /**
  * PPTX幻灯片元素类型
  */
-export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group'
+export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group' | 'video'
 
 /**
  * PPTX元素基类
@@ -54,11 +54,21 @@ export interface PPTXElement {
 }
 
 /**
+ * 文本片段（支持每个片段不同颜色）
+ */
+export interface PPTXTextFragment {
+  text: string
+  color?: string
+  backgroundColor?: string
+}
+
+/**
  * 文本元素
  */
 export interface PPTXTextElement extends PPTXElement {
   type: 'text'
-  text: string
+  text: string // 保留完整文本作为fallback
+  fragments?: PPTXTextFragment[] // 文本片段数组，支持每个片段不同颜色
   style: PPTXTextStyle
 }
 
@@ -86,12 +96,29 @@ export interface PPTXImageElement extends PPTXElement {
 }
 
 /**
+ * 视频元素
+ */
+export interface PPTXVideoElement extends PPTXElement {
+  type: 'video'
+  src: string
+  contentType?: string
+  poster?: string  // 视频封面图
+  videoRelId?: string  // 视频文件关系ID（内部使用）
+  posterRelId?: string  // 封面图关系ID（内部使用）
+}
+
+/**
  * 形状元素
  */
 export interface PPTXShapeElement extends PPTXElement {
   type: 'shape'
   shapeType?: string
   fill?: string
+  gradient?: {
+    type: 'linear' | 'solid'
+    colors: Array<{ pos: number; color: string }>
+    angle?: number
+  }
   stroke?: string
   strokeWidth?: number
 }

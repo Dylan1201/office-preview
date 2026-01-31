@@ -1,8 +1,13 @@
 import JSZip from 'jszip'
 import type { PPTXPresentation, PPTXSlide, PPTXElement } from '../types'
 import { parseSlideXML } from './slide'
-import { parseThemeXML } from './theme'
-import { getElementText, parseColor, getUnitValue } from './element'
+import { parseThemeXML, setThemeLogger } from './theme'
+import { getElementText, parseColor, getUnitValue, setLogger } from './element'
+import { dumpLogs, log } from './logger'
+
+// 设置日志函数
+setLogger(log)
+setThemeLogger(log)
 
 /**
  * PPTX解析器
@@ -26,6 +31,9 @@ export class PPTXParser {
 
       // 解析幻灯片（传入尺寸）
       const slides = await this.parseSlides(width, height)
+
+      // 输出解析日志到控制台
+      dumpLogs()
 
       return {
         slides,
@@ -80,13 +88,15 @@ export class PPTXParser {
   }
 
   /**
-   * 解析幻灯片图片
+   * 解析幻灯片图片和视频
    */
   private async parseSlideImages(slide: PPTXSlide, slideIndex: number): Promise<void> {
     const mediaFiles = Object.keys(this.zip!.files)
       .filter(name => name.startsWith(`ppt/slides/_rels/slide${slideIndex}.xml.rels`))
 
-    if (mediaFiles.length === 0) return
+    if (mediaFiles.length === 0) {
+      return
+    }
 
     const relsFile = this.zip!.file(mediaFiles[0])
     if (!relsFile) return
@@ -96,31 +106,117 @@ export class PPTXParser {
     const relsDoc = parser.parseFromString(relsXml, 'text/xml')
     const relationships = relsDoc.getElementsByTagName('Relationship')
 
-    const imageMap = new Map<string, string>()
+    const mediaMap = new Map<string, string>()
 
     for (let i = 0; i < relationships.length; i++) {
       const rel = relationships[i]
       const id = rel.getAttribute('Id')
       const target = rel.getAttribute('Target')
+      const type = rel.getAttribute('Type')
       if (id && target) {
-        imageMap.set(id, target)
+        mediaMap.set(id, target)
       }
     }
 
-    // 更新图片元素的src
+    // 更新图片元素的src和视频元素的src
     for (const element of slide.elements) {
       if (element.type === 'image') {
         const blipRelId = (element as any).blipRelId
-        if (blipRelId && imageMap.has(blipRelId)) {
-          const imagePath = imageMap.get(blipRelId)!
-          const imageFile = this.zip!.file(`ppt/${imagePath}`)
+
+        if (blipRelId && mediaMap.has(blipRelId)) {
+          let imagePath = mediaMap.get(blipRelId)!
+
+          // 处理相对路径
+          if (imagePath.startsWith('../')) {
+            imagePath = imagePath.substring(3)
+          } else if (imagePath.startsWith('media/')) {
+            imagePath = imagePath
+          } else {
+            imagePath = 'media/' + imagePath
+          }
+
+          const fullPath = `ppt/${imagePath}`
+          const imageFile = this.zip!.file(fullPath)
+
           if (imageFile) {
             const blob = await imageFile.async('blob')
             ;(element as any).src = URL.createObjectURL(blob)
           }
         }
+      } else if (element.type === 'video') {
+        const videoElement = element as any
+        const videoRelId = videoElement.videoRelId
+        const posterRelId = videoElement.posterRelId
+
+        // 处理视频文件
+        if (videoRelId && mediaMap.has(videoRelId)) {
+          let videoPath = mediaMap.get(videoRelId)!
+
+          // 处理相对路径
+          if (videoPath.startsWith('../')) {
+            videoPath = videoPath.substring(3)
+          } else if (videoPath.startsWith('media/')) {
+            videoPath = videoPath
+          } else {
+            videoPath = 'media/' + videoPath
+          }
+
+          const fullPath = `ppt/${videoPath}`
+          const videoFile = this.zip!.file(fullPath)
+
+          if (videoFile) {
+            const blob = await videoFile.async('blob')
+            videoElement.src = URL.createObjectURL(blob)
+            // 获取内容类型
+            const contentType = this.getVideoContentType(fullPath)
+            if (contentType) {
+              videoElement.contentType = contentType
+            }
+            log(`[VIDEO] Loaded video: ${fullPath}, type: ${contentType}`)
+          }
+        }
+
+        // 处理封面图
+        if (posterRelId && mediaMap.has(posterRelId)) {
+          let posterPath = mediaMap.get(posterRelId)!
+
+          if (posterPath.startsWith('../')) {
+            posterPath = posterPath.substring(3)
+          } else if (posterPath.startsWith('media/')) {
+            posterPath = posterPath
+          } else {
+            posterPath = 'media/' + posterPath
+          }
+
+          const fullPath = `ppt/${posterPath}`
+          const posterFile = this.zip!.file(fullPath)
+
+          if (posterFile) {
+            const blob = await posterFile.async('blob')
+            videoElement.poster = URL.createObjectURL(blob)
+            log(`[VIDEO] Loaded poster: ${fullPath}`)
+          }
+        }
       }
     }
+  }
+
+  /**
+   * 获取视频内容类型
+   */
+  private getVideoContentType(filePath: string): string | undefined {
+    const ext = filePath.toLowerCase().split('.').pop()
+    const videoTypes: Record<string, string> = {
+      'mp4': 'video/mp4',
+      'webm': 'video/webm',
+      'ogg': 'video/ogg',
+      'avi': 'video/x-msvideo',
+      'mov': 'video/quicktime',
+      'wmv': 'video/x-ms-wmv',
+      'flv': 'video/x-flv',
+      'mkv': 'video/x-matroska'
+    }
+    return videoTypes[ext || '']
   }
 
   /**

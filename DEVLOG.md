@@ -482,6 +482,417 @@ fix: 修复Word预览功能并优化样式
 
 ---
 
+## 🎨 2026年1月31日 - PPT预览功能修复
+
+### 问题背景
+PPT预览功能完全无法显示，从完全空白到能正常显示内容。
+
+### 修复内容
+
+#### 1. Container ref is null 问题
+**文件**: `packages/vue-pptx/src/main.vue`
+
+**问题**: containerRef在v-else中，onMounted时不存在
+```vue
+<!-- 错误结构 -->
+<div v-if="loading">Loading...</div>
+<div v-else-if="error">Error</div>
+<div v-else ref="containerRef"></div>
+```
+
+**解决方案**: 重构模板，containerRef始终存在，loading/error改为绝对定位遮罩
+```vue
+<div class="ppt-container" ref="containerRef">
+  <div v-if="loading" class="loading-overlay">Loading...</div>
+  <div v-else-if="error" class="error-overlay">Error</div>
+</div>
+```
+
+---
+
+#### 2. XML命名空间解析问题
+**文件**: `packages/vue-pptx/src/parser/slide.ts`
+
+**问题**: 解析返回0元素
+```typescript
+// 之前：只处理带命名空间的元素
+const spTree = slideSpgr.getElementsByTagName('p:spTree')[0]
+```
+
+**解决方案**: 实现三层fallback（带前缀/不带前缀/localName）
+```typescript
+function getElementsByTagNameNS(element: Element, localName: string): Element[] {
+  // 尝试1: 带命名空间前缀
+  let elements = Array.from(element.children).filter(el =>
+    el.tagName === `a:${localName}` || el.tagName === `p:${localName}`
+  )
+  if (elements.length > 0) return elements
+
+  // 尝试2: 不带前缀
+  elements = Array.from(element.children).filter(el =>
+    el.tagName === localName
+  )
+  if (elements.length > 0) return elements
+
+  // 尝试3: localName匹配
+  return Array.from(element.children).filter(el =>
+    (el as Element).localName === localName
+  )
+}
+```
+
+---
+
+#### 3. Slide尺寸解析问题
+**文件**: `packages/vue-pptx/src/parser/index.ts`
+
+**问题**: 底部元素被裁剪，slide尺寸用默认960x540，实际是1280x720
+```typescript
+// 之前：查找错误
+const slideSize = xml.querySelector('sldSz')
+```
+
+**解决方案**: 修复slideSize查找，使用sldSz
+```typescript
+// 正确查找
+const slideSize = xml.querySelector('p\\:sldSz') || xml.querySelector('[local-name="sldSz"]')
+```
+
+---
+
+#### 4. 响应式状态问题
+**文件**: `packages/vue-pptx/src/main.vue`
+
+**问题**: "暂无数据"一直显示
+```typescript
+// 之前：不是响应式对象
+const presentation = {}
+```
+
+**解决方案**: 改为ref响应式
+```typescript
+const presentation = ref<Presentation | null>(null)
+```
+
+---
+
+#### 5. 图片显示问题
+**文件**: `packages/vue-pptx/src/parser/slide.ts`
+
+**问题**: 图片无法显示，blipFill用p:命名空间，路径处理错误
+
+**解决方案**: 添加p:blipFill，修复相对路径
+```typescript
+const blipFill = pic.getElementsByTagName('p:blipFill')[0] ||
+                pic.getElementsByTagName('blipFill')[0]
+
+// 修复图片路径
+const embed = blip.getAttribute('r:embed') || blip.getAttribute('embed')
+```
+
+---
+
+#### 6. 形状元素和渐变支持
+
+**形状元素识别**: `packages/vue-pptx/src/parser/slide.ts`
+```typescript
+// 只在文本不为空时创建文本元素，否则视为形状
+if (!text || text.trim() === '') {
+  // 空文本框视为形状
+} else {
+  // 有文本才创建文本元素
+}
+```
+
+**渐变填充解析**: `packages/vue-pptx/src/parser/slide.ts`
+```typescript
+function parseGradient(gradFill: Element): Gradient | null {
+  const gsLst = gradFill.getElementsByTagName('a:gsLst')[0]
+  if (!gsLst) return null
+
+  const stops = Array.from(gsLst.children).map(gs => {
+    const pos = parseInt(gs.getAttribute('pos') || '0') / 1000
+    // 解析颜色...
+  })
+
+  return { type: 'linear', stops }
+}
+```
+
+**渐变渲染**: `packages/vue-pptx/src/renderer/index.ts`
+```css
+background: linear-gradient(to bottom,
+  rgba(230, 90, 0, 1) 0%,
+  rgba(255, 140, 0, 1) 50%,
+  rgba(255, 200, 0, 1) 100%
+)
+```
+
+### 解析结果对比（Slide 1）
+
+| 项目   | 之前  | 现在  |
+|--------|-------|-------|
+| 文本   | 71个  | 7个   |
+| 形状   | 0个   | 64个  |
+| 图片   | 0个   | 1张   |
+
+### 相关文件
+- [`packages/vue-pptx/src/main.vue`](packages/vue-pptx/src/main.vue:1-150)
+- [`packages/vue-pptx/src/parser/index.ts`](packages/vue-pptx/src/parser/index.ts:1-100)
+- [`packages/vue-pptx/src/parser/slide.ts`](packages/vue-pptx/src/parser/slide.ts:1-300)
+- [`packages/vue-pptx/src/renderer/index.ts`](packages/vue-pptx/src/renderer/index.ts:1-200)
+- [`packages/vue-pptx/src/types.ts`](packages/vue-pptx/src/types.ts:1-100)
+
+---
+
+## 📋 待办事项
+
+### 高优先级
+1. **文字颜色修复完成** ✅
+   - ✅ 修复主题颜色解析 - 使用实际主题文件中的颜色而非硬编码
+   - ✅ 支持文字片段颜色 - 每个文字片段可以有不同颜色
+   - ✅ 修复渐变色解析 - 使用中间位置颜色
+   - ✅ 添加文字背景色（highlight）支持
+
+2. **文字原色修复** ⚠️ TODO
+   - 当前使用中间位置颜色作为渐变色，不是真正的渐变效果
+   - 应该使用CSS background-clip: text 实现真正的文字渐变
+   - 需要处理文字渐变的方向和角度
+
+3. **文字背景色优化** ⚠️ TODO
+   - 当前支持highlight背景色
+   - 需要添加内边距让背景色更好看
+   - 考虑背景色的圆角效果
+
+4. **移除调试日志** - 功能稳定后清理所有console.log
+
+### 中优先级
+5. **PPT视频播放支持** 🆕
+   - 解析视频元素（p:video）
+   - 提取视频文件路径
+   - 使用video标签渲染视频
+
+6. 字体大小适配 - 检查字号是否按比例正确显示
+7. 文本对齐方式 - 检查左/中/右对齐是否正确
+8. 幻灯片切换 - 测试上一页/下一页功能
+
+### 低优先级
+9. 形状类型支持 - 支持更多形状（圆形、线条等）
+10. 图表和表格 - 实现chart和table元素渲染
+11. 动画效果 - 支持PPT动画
+12. 性能优化 - 大文件加载优化
+
+---
+
+## 🎨 2026年1月31日 - PPT文字颜色与背景色修复
+
+### 问题背景
+PPT预览中文字颜色显示不正确：
+1. 文字颜色显示为黑色，而源文件中使用多种颜色
+2. 同一文本框中不同字符应该有不同颜色（如"AI人**工**智能计划书"）
+3. 渐变色文字显示为单色
+4. 文字背景色（highlight）未显示
+
+### 根本原因分析
+
+#### 问题1: 主题颜色硬编码
+**文件**: `packages/vue-pptx/src/parser/element.ts`
+
+之前的代码使用硬编码的预定义主题颜色：
+```typescript
+const predefinedColors: Record<string, string> = {
+  'bg1': '#FFFFFF',
+  'tx1': '#000000',
+  'accent3': '#A5A5A5',  // 错误！实际是 #56CA95
+  'accent6': '#70AD47',  // 错误！实际是 #EC5F74
+  // ...
+}
+```
+
+而实际PPT的主题文件（`theme1.xml`）中定义了完全不同的颜色：
+```xml
+<a:accent3><a:srgbClr val="56CA95"/></a:accent3>  <!-- 绿色 -->
+<a:accent6><a:srgbClr val="EC5F74"/></a:accent6>  <!-- 粉红色 -->
+```
+
+#### 问题2: 文本片段颜色未解析
+**文件**: `packages/vue-pptx/src/parser/slide.ts`
+
+之前的`parseTextStyle`函数只解析第一个run（文字片段）的颜色：
+```typescript
+let r = p.getElementsByTagName('a:r')[0]  // 只取第一个run
+const color = parseColor(rPr, theme)
+style.color = color  // 所有文字使用同一颜色
+```
+
+#### 问题3: 渐变解析错误
+**文件**: `packages/vue-pptx/src/parser/slide.ts`
+
+`parseGradientFromElement`使用`getElementsByTagName`递归查找，导致可能找到嵌套元素。
+
+### 解决方案
+
+#### 1. 修复主题颜色解析
+
+**修改theme.ts - 正确解析主题文件**
+```typescript
+// 使用children直接访问子元素
+const children = colorScheme.children
+for (let i = 0; i < children.length; i++) {
+  const child = children[i]
+  const localName = child.localName || child.tagName.replace('a:', '')
+
+  // 查找srgbClr
+  const allChildren = child.getElementsByTagName('*')
+  for (let j = 0; j < allChildren.length; j++) {
+    if (allChildren[j].localName === 'srgbClr') {
+      theme.colors[colorMap[localName]] = '#' + allChildren[j].getAttribute('val')
+    }
+  }
+}
+```
+
+**修改element.ts - 添加颜色名称映射**
+```typescript
+const colorMapping: Record<string, string> = {
+  'bg1': 'lt1',      // 背景浅色
+  'tx1': 'dk1',      // 文字深色
+  'tx2': 'lt2',      // 文字浅色
+  // ...
+}
+
+const mappedColorName = colorMapping[colorName] || colorName
+if (theme.colors && theme.colors[mappedColorName]) {
+  baseColor = theme.colors[mappedColorName]
+}
+```
+
+#### 2. 支持文字片段颜色
+
+**修改types.ts - 添加文本片段类型**
+```typescript
+export interface PPTXTextFragment {
+  text: string
+  color?: string
+  backgroundColor?: string  // 新增背景色支持
+}
+
+export interface PPTXTextElement extends PPTXElement {
+  type: 'text'
+  text: string
+  fragments?: PPTXTextFragment[]  // 新增片段数组
+  style: PPTXTextStyle
+}
+```
+
+**修改slide.ts - 新增parseTextFragments函数**
+```typescript
+function parseTextFragments(p: Element, theme: any): PPTXTextFragment[] {
+  const fragments: PPTXFragment[] = []
+
+  // 获取所有run
+  const runs = p.getElementsByTagName('a:r')
+
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i]
+    const text = r.getElementsByTagName('a:t')[0]?.textContent || ''
+
+    // 解析颜色
+    const color = parseColorFromRun(r, theme)
+    // 解析背景色
+    const backgroundColor = parseHighlightFromRun(r, theme)
+
+    fragments.push({ text, color, backgroundColor })
+  }
+
+  return fragments
+}
+```
+
+#### 3. 修复渐变解析
+
+**修改slide.ts - 使用children而非getElementsByTagName**
+```typescript
+function parseGradientFromElement(gradFill: Element, theme: any) {
+  const gsLst = gradFill.getElementsByTagName('a:gsLst')[0]
+  const children = gsLst.children
+
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    if (child.localName !== 'gs') continue
+
+    const pos = parseInt(child.getAttribute('pos') || '0')
+
+    // 直接访问子元素
+    for (let j = 0; j < child.children.length; j++) {
+      const subChild = child.children[j]
+      const subLocalName = subChild.localName || subChild.tagName.replace('a:', '')
+
+      if (subLocalName === 'srgbClr') {
+        const val = subChild.getAttribute('val')
+        if (val) color = '#' + val
+      } else if (subLocalName === 'schemeClr') {
+        color = parseColor(subChild, theme)
+      }
+    }
+  }
+
+  // 选择最接近中间位置(pos=50000)的颜色
+}
+```
+
+#### 4. 添加文字背景色支持
+
+**修改slide.ts - 解析highlight**
+```typescript
+// 查找highlight元素
+let highlight = rPr.getElementsByTagName('a:highlight')[0]
+if (!highlight) {
+  // 使用localName查找
+  const allChildren = rPr.getElementsByTagName('*')
+  for (let j = 0; j < allChildren.length; j++) {
+    if (allChildren[j].localName === 'highlight') {
+      highlight = allChildren[j]
+      break
+    }
+  }
+}
+
+if (highlight) {
+  backgroundColor = parseColor(highlight, theme)
+}
+```
+
+**修改renderer/index.ts - 应用背景色**
+```typescript
+if (fragment.backgroundColor) {
+  span.style.backgroundColor = fragment.backgroundColor
+  span.style.padding = '0 2px'
+}
+```
+
+### 解析结果对比
+
+| 文本 | 之前颜色 | 之后颜色 |
+|------|----------|----------|
+| AI | #000000 | #FFFFFF (白色) |
+| 人 | #000000 | #EC5F74 (粉红色) |
+| 工 | #000000 | #7aa4a4 (暗绿色) |
+| 智 | #000000 | #000000 (渐变中间) |
+| 能计 | #000000 | #7aa4a4 (暗绿色) |
+| 划 | #000000 | #ffffff (白色) |
+| 书 | #000000 | #FFFFFF (白色) |
+
+### 相关文件
+- [`packages/vue-pptx/src/types.ts`](packages/vue-pptx/src/types.ts) - 新增PPTXTextFragment类型
+- [`packages/vue-pptx/src/parser/element.ts`](packages/vue-pptx/src/parser/element.ts) - 修复主题颜色解析
+- [`packages/vue-pptx/src/parser/theme.ts`](packages/vue-pptx/src/parser/theme.ts) - 正确解析主题XML
+- [`packages/vue-pptx/src/parser/slide.ts`](packages/vue-pptx/src/parser/slide.ts) - 文字片段颜色解析、渐变修复
+- [`packages/vue-pptx/src/renderer/index.ts`](packages/vue-pptx/src/renderer/index.ts) - 渲染文字片段和背景色
+- [`packages/vue-pptx/src/parser/logger.ts`](packages/vue-pptx/src/parser/logger.ts) - 日志收集器
+
+---
+
 *生成时间: 2025年1月30日*
 *开发者: Claude Sonnet 4.5*
 *更新时间: 2026年1月31日*
