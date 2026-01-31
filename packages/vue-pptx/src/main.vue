@@ -38,10 +38,10 @@ const containerRef = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const errorMsg = ref('')
 let pptxViewer: PPTXViewer | null = null
-let presentation: PPTXPresentation | null = null
+const presentation = ref<PPTXPresentation | null>(null)
 const currentSlide = ref(0)
 const showControls = computed(() => props.options?.showControls !== false)
-const totalSlides = computed(() => presentation?.slides.length || 0)
+const totalSlides = computed(() => presentation.value?.slides.length || 0)
 
 /**
  * 预览PPTX
@@ -61,10 +61,10 @@ async function preview() {
       throw new Error('PPTX Viewer not initialized')
     }
 
-    presentation = await pptxViewer.preview(arrayBuffer)
+    presentation.value = await pptxViewer.preview(arrayBuffer)
     currentSlide.value = 0
     loading.value = false
-    emit('rendered', presentation)
+    emit('rendered', presentation.value)
   } catch (e) {
     console.error('[PPTX] Failed to load:', e)
     errorMsg.value = e instanceof Error ? e.message : '加载失败'
@@ -77,7 +77,7 @@ async function preview() {
  * 下一页
  */
 function nextSlide() {
-  if (!presentation || currentSlide.value >= presentation.slides.length - 1) return
+  if (!presentation.value || currentSlide.value >= presentation.value.slides.length - 1) return
   pptxViewer?.next()
   currentSlide.value++
   emit('slideChange', currentSlide.value)
@@ -87,7 +87,7 @@ function nextSlide() {
  * 上一页
  */
 function prevSlide() {
-  if (!presentation || currentSlide.value <= 0) return
+  if (!presentation.value || currentSlide.value <= 0) return
   pptxViewer?.prev()
   currentSlide.value--
   emit('slideChange', currentSlide.value)
