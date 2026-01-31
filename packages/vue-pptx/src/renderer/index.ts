@@ -16,7 +16,6 @@ export class PPTXRenderer {
    */
   renderSlide(slide: PPTXSlide): void {
     this.container.innerHTML = ''
-
     const slideEl = this.createSlideElement(slide)
     this.container.appendChild(slideEl)
   }
@@ -34,7 +33,7 @@ export class PPTXRenderer {
     slideEl.style.overflow = 'hidden'
 
     // 渲染所有元素
-    slide.elements.forEach(element => {
+    slide.elements.forEach((element) => {
       const elementEl = this.renderElement(element)
       if (elementEl) {
         slideEl.appendChild(elementEl)
@@ -81,9 +80,8 @@ export class PPTXRenderer {
     if (style.fontFamily) {
       textEl.style.fontFamily = style.fontFamily
     }
-    if (style.color) {
-      textEl.style.color = style.color
-    }
+    // 设置颜色，如果没有则使用默认黑色
+    textEl.style.color = style.color || '#000000'
     if (style.bold) {
       textEl.style.fontWeight = 'bold'
     }
@@ -101,7 +99,11 @@ export class PPTXRenderer {
       textEl.style.alignItems = style.verticalAlign === 'top' ? 'flex-start' : style.verticalAlign === 'bottom' ? 'flex-end' : 'center'
     }
 
-    textEl.textContent = element.text
+    if (element.text) {
+      textEl.textContent = element.text
+    } else {
+      textEl.textContent = ''
+    }
 
     return textEl
   }

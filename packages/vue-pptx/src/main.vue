@@ -1,7 +1,12 @@
 <template>
   <div class="vue-office-pptx">
-    <div ref="containerRef" class="vue-office-pptx-main"></div>
-    <div v-if="showControls" class="vue-office-pptx-controls">
+    <div class="vue-office-pptx-main">
+      <div v-if="loading" class="vue-office-pptx-loading">加载中...</div>
+      <div v-else-if="errorMsg" class="vue-office-pptx-error">{{ errorMsg }}</div>
+      <div v-else-if="totalSlides === 0" class="vue-office-pptx-empty">暂无数据</div>
+      <div ref="containerRef" class="vue-office-pptx-container"></div>
+    </div>
+    <div v-if="showControls && totalSlides > 0" class="vue-office-pptx-controls">
       <button class="control-btn" @click="prevSlide" :disabled="currentSlide <= 0">
         &#8249;
       </button>
@@ -23,9 +28,15 @@ const props = withDefaults(defineProps<PptxProps>(), {
   options: () => ({})
 })
 
-const emit = defineEmits<PptxEmits>()
+const emit = defineEmits<{
+  rendered: [presentation: PPTXPresentation]
+  error: [e: Error]
+  slideChange: [index: number]
+}>()
 
 const containerRef = ref<HTMLElement | null>(null)
+const loading = ref(true)
+const errorMsg = ref('')
 let pptxViewer: PPTXViewer | null = null
 let presentation: PPTXPresentation | null = null
 const currentSlide = ref(0)
@@ -36,14 +47,28 @@ const totalSlides = computed(() => presentation?.slides.length || 0)
  * 预览PPTX
  */
 async function preview() {
-  if (!props.src) return
+  if (!props.src) {
+    return
+  }
+
+  loading.value = true
+  errorMsg.value = ''
 
   try {
     const arrayBuffer = await getPptxData(props.src, props.requestOptions)
-    presentation = await pptxViewer!.preview(arrayBuffer)
+
+    if (!pptxViewer) {
+      throw new Error('PPTX Viewer not initialized')
+    }
+
+    presentation = await pptxViewer.preview(arrayBuffer)
     currentSlide.value = 0
+    loading.value = false
     emit('rendered', presentation)
   } catch (e) {
+    console.error('[PPTX] Failed to load:', e)
+    errorMsg.value = e instanceof Error ? e.message : '加载失败'
+    loading.value = false
     emit('error', e instanceof Error ? e : new Error(String(e)))
   }
 }
@@ -52,6 +77,7 @@ async function preview() {
  * 下一页
  */
 function nextSlide() {
+  if (!presentation || currentSlide.value >= presentation.slides.length - 1) return
   pptxViewer?.next()
   currentSlide.value++
   emit('slideChange', currentSlide.value)
@@ -61,13 +87,19 @@ function nextSlide() {
  * 上一页
  */
 function prevSlide() {
+  if (!presentation || currentSlide.value <= 0) return
   pptxViewer?.prev()
   currentSlide.value--
   emit('slideChange', currentSlide.value)
 }
 
 onMounted(() => {
-  if (!containerRef.value) return
+  if (!containerRef.value) {
+    console.error('[PPTX] Container ref is null')
+    errorMsg.value = '容器初始化失败'
+    loading.value = false
+    return
+  }
 
   pptxViewer = initPptxPreviewer(containerRef.value, {
     width: props.options?.width,
@@ -76,6 +108,8 @@ onMounted(() => {
 
   if (props.src) {
     preview()
+  } else {
+    loading.value = false
   }
 })
 
@@ -105,6 +139,35 @@ watch(
   align-items: center;
   justify-content: center;
   background-color: #f0f0f0;
+  position: relative;
+}
+
+.vue-office-pptx-loading,
+.vue-office-pptx-error,
+.vue-office-pptx-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #666;
+  z-index: 20;
+}
+
+.vue-office-pptx-error {
+  color: #f56c6c;
+}
+
+.vue-office-pptx-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .vue-office-pptx-main :deep(.pptx-slide) {

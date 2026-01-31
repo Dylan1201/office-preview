@@ -2,15 +2,25 @@
  * 获取元素文本内容
  */
 export function getElementText(txBody: Element): string {
-  const paragraphs = txBody.getElementsByTagName('a:p')
+  let paragraphs = txBody.getElementsByTagName('a:p')
+  if (paragraphs.length === 0) {
+    paragraphs = txBody.getElementsByTagName('p')
+  }
+
   const texts: string[] = []
 
   for (let i = 0; i < paragraphs.length; i++) {
-    const runs = paragraphs[i].getElementsByTagName('a:r')
+    let runs = paragraphs[i].getElementsByTagName('a:r')
+    if (runs.length === 0) {
+      runs = paragraphs[i].getElementsByTagName('r')
+    }
     const paragraphText: string[] = []
 
     for (let j = 0; j < runs.length; j++) {
-      const t = runs[j].getElementsByTagName('a:t')[0]
+      let t = runs[j].getElementsByTagName('a:t')[0]
+      if (!t) {
+        t = runs[j].getElementsByTagName('t')[0]
+      }
       if (t && t.textContent) {
         paragraphText.push(t.textContent)
       }
@@ -26,12 +36,18 @@ export function getElementText(txBody: Element): string {
  * 解析颜色
  */
 export function parseColor(element: Element, theme: any): string {
-  const srgbClr = element.getElementsByTagName('a:srgbClr')[0]
+  let srgbClr = element.getElementsByTagName('a:srgbClr')[0]
+  if (!srgbClr) {
+    srgbClr = element.getElementsByTagName('srgbClr')[0]
+  }
   if (srgbClr) {
     return '#' + srgbClr.getAttribute('val')
   }
 
-  const schemeClr = element.getElementsByTagName('a:schemeClr')[0]
+  let schemeClr = element.getElementsByTagName('a:schemeClr')[0]
+  if (!schemeClr) {
+    schemeClr = element.getElementsByTagName('schemeClr')[0]
+  }
   if (schemeClr && theme.colors) {
     const colorName = schemeClr.getAttribute('val')
     if (colorName && theme.colors[colorName]) {

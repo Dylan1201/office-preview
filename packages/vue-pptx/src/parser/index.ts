@@ -18,14 +18,14 @@ export class PPTXParser {
     try {
       this.zip = await JSZip.loadAsync(arrayBuffer)
 
+      // 先获取演示文稿尺寸
+      const { width, height } = await this.getSlideSize()
+
       // 解析主题
       await this.parseTheme()
 
-      // 解析幻灯片
-      const slides = await this.parseSlides()
-
-      // 获取演示文稿尺寸
-      const { width, height } = await this.getSlideSize()
+      // 解析幻灯片（传入尺寸）
+      const slides = await this.parseSlides(width, height)
 
       return {
         slides,
@@ -33,7 +33,7 @@ export class PPTXParser {
         height
       }
     } catch (e) {
-      console.error('Failed to parse PPTX:', e)
+      console.error('[Parser] Failed to parse:', e)
       throw new Error('Failed to parse PPTX file')
     }
   }
@@ -55,7 +55,7 @@ export class PPTXParser {
   /**
    * 解析幻灯片
    */
-  private async parseSlides(): Promise<PPTXSlide[]> {
+  private async parseSlides(width: number, height: number): Promise<PPTXSlide[]> {
     const slides: PPTXSlide[] = []
 
     // 获取所有幻灯片文件
@@ -68,7 +68,7 @@ export class PPTXParser {
       if (!slideFile) continue
 
       const slideXml = await slideFile.async('string')
-      const slide = parseSlideXML(slideXml, i, this.theme)
+      const slide = parseSlideXML(slideXml, i, this.theme, width, height)
 
       // 解析图片
       await this.parseSlideImages(slide, i + 1)
@@ -127,28 +127,49 @@ export class PPTXParser {
    * 获取幻灯片尺寸
    */
   private async getSlideSize(): Promise<{ width: number; height: number }> {
-    const slideSizeFile = this.zip!.file('ppt/viewProps.xml')
-    if (!slideSizeFile) {
-      return { width: 960, height: 540 } // 默认16:9
-    }
+    // 尝试从多个位置获取slide尺寸
+    const possibleFiles = [
+      'ppt/presentation.xml',
+      'ppt/viewProps.xml'
+    ]
 
-    try {
-      const sizeXml = await slideSizeFile.async('string')
-      const parser = new DOMParser()
-      const doc = parser.parseFromString(sizeXml, 'text/xml')
-      const slideSize = doc.getElementsByTagName('p:slideSize')[0]
-
-      if (slideSize) {
-        const cx = parseInt(slideSize.getAttribute('cx') || '9144000')
-        const cy = parseInt(slideSize.getAttribute('cy') || '5143500')
-        // 转换EMU到像素 (1 inch = 914400 EMU, 96 DPI)
-        return {
-          width: Math.round(cx / 914400 * 96),
-          height: Math.round(cy / 914400 * 96)
-        }
+    for (const filePath of possibleFiles) {
+      const slideSizeFile = this.zip!.file(filePath)
+      if (!slideSizeFile) {
+        continue
       }
-    } catch (e) {
-      console.warn('Failed to parse slide size:', e)
+
+      try {
+        const sizeXml = await slideSizeFile.async('string')
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(sizeXml, 'text/xml')
+
+        // 查找 sldSz 元素（PPTX中的slideSize元素名）
+        let slideSize = doc.getElementsByTagName('p:sldSz')[0]
+        if (!slideSize) {
+          slideSize = doc.getElementsByTagName('sldSz')[0]
+        }
+        if (!slideSize) {
+          const allElements = doc.getElementsByTagName('*')
+          for (let i = 0; i < allElements.length; i++) {
+            if (allElements[i].localName === 'sldSz') {
+              slideSize = allElements[i]
+              break
+            }
+          }
+        }
+
+        if (slideSize) {
+          const cx = parseInt(slideSize.getAttribute('cx') || '9144000')
+          const cy = parseInt(slideSize.getAttribute('cy') || '5143500')
+          // 转换EMU到像素 (1 inch = 914400 EMU, 96 DPI)
+          const width = Math.round(cx / 914400 * 96)
+          const height = Math.round(cy / 914400 * 96)
+          return { width, height }
+        }
+      } catch (e) {
+        // 静默失败，尝试下一个文件
+      }
     }
 
     return { width: 960, height: 540 }

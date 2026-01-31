@@ -4,25 +4,57 @@ import { getElementText, parseColor, getUnitValue } from './element'
 /**
  * 解析幻灯片XML
  */
-export function parseSlideXML(xmlString: string, index: number, theme: any): PPTXSlide {
+export function parseSlideXML(xmlString: string, index: number, theme: any, width: number = 960, height: number = 540): PPTXSlide {
   const parser = new DOMParser()
   const doc = parser.parseFromString(xmlString, 'text/xml')
 
   const elements: PPTXElement[] = []
-  const spTree = doc.getElementsByTagName('p:spTree')[0]
+
+  // 尝试多种方式查找 spTree
+  let spTree = doc.getElementsByTagName('p:spTree')[0]
 
   if (!spTree) {
+    // 尝试不带命名空间前缀
+    spTree = doc.getElementsByTagName('spTree')[0]
+  }
+
+  if (!spTree) {
+    // 尝试使用 localName 查找
+    const allElements = doc.getElementsByTagName('*')
+    for (let i = 0; i < allElements.length; i++) {
+      if (allElements[i].localName === 'spTree') {
+        spTree = allElements[i]
+        break
+      }
+    }
+  }
+
+  if (!spTree) {
+    console.warn(`[Slide ${index + 1}] No spTree found`)
     return {
       id: `slide-${index}`,
       index,
       elements: [],
-      width: 960,
-      height: 540
+      width,
+      height
     }
   }
 
-  // 解析所有形状元素
-  const shapes = spTree.getElementsByTagName('p:sp')
+  // 尝试多种方式查找 shapes
+  let shapes = spTree.getElementsByTagName('p:sp')
+  if (shapes.length === 0) {
+    shapes = spTree.getElementsByTagName('sp')
+  }
+  if (shapes.length === 0) {
+    // 使用 localName 查找
+    const allSp = spTree.getElementsByTagName('*')
+    shapes = []
+    for (let i = 0; i < allSp.length; i++) {
+      if (allSp[i].localName === 'sp') {
+        shapes.push(allSp[i])
+      }
+    }
+  }
 
   for (let i = 0; i < shapes.length; i++) {
     const element = parseShape(shapes[i], theme)
@@ -31,8 +63,21 @@ export function parseSlideXML(xmlString: string, index: number, theme: any): PPT
     }
   }
 
-  // 解析图片元素
-  const pics = spTree.getElementsByTagName('p:pic')
+  // 尝试多种方式查找 pictures
+  let pics = spTree.getElementsByTagName('p:pic')
+  if (pics.length === 0) {
+    pics = spTree.getElementsByTagName('pic')
+  }
+  if (pics.length === 0) {
+    // 使用 localName 查找
+    const allPic = spTree.getElementsByTagName('*')
+    pics = []
+    for (let i = 0; i < allPic.length; i++) {
+      if (allPic[i].localName === 'pic') {
+        pics.push(allPic[i])
+      }
+    }
+  }
 
   for (let i = 0; i < pics.length; i++) {
     const element = parsePicture(pics[i], theme)
@@ -41,8 +86,11 @@ export function parseSlideXML(xmlString: string, index: number, theme: any): PPT
     }
   }
 
-  // 解析组合形状
-  const grpSps = spTree.getElementsByTagName('p:grpSp')
+  // 尝试多种方式查找 group shapes
+  let grpSps = spTree.getElementsByTagName('p:grpSp')
+  if (grpSps.length === 0) {
+    grpSps = spTree.getElementsByTagName('grpSp')
+  }
 
   for (let i = 0; i < grpSps.length; i++) {
     const groupElements = parseGroupShape(grpSps[i], theme)
@@ -53,8 +101,8 @@ export function parseSlideXML(xmlString: string, index: number, theme: any): PPT
     id: `slide-${index}`,
     index,
     elements,
-    width: 960,
-    height: 540
+    width,
+    height
   }
 }
 
@@ -62,16 +110,28 @@ export function parseSlideXML(xmlString: string, index: number, theme: any): PPT
  * 解析形状
  */
 function parseShape(sp: Element, theme: any): PPTXElement | null {
-  const nvSpPr = sp.getElementsByTagName('p:nvSpPr')[0]
-  const spPr = sp.getElementsByTagName('p:spPr')[0]
-  const txBody = sp.getElementsByTagName('p:txBody')[0]
+  // 尝试多种方式查找元素
+  let nvSpPr = sp.getElementsByTagName('p:nvSpPr')[0] || sp.getElementsByTagName('nvSpPr')[0]
+  let spPr = sp.getElementsByTagName('p:spPr')[0] || sp.getElementsByTagName('spPr')[0]
+  let txBody = sp.getElementsByTagName('p:txBody')[0] || sp.getElementsByTagName('txBody')[0]
+
+  if (!spPr) {
+    // 使用 localName 查找
+    const allChildren = sp.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'spPr') {
+        spPr = allChildren[i]
+        break
+      }
+    }
+  }
 
   if (!spPr) return null
 
   // 获取位置和尺寸
-  const xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0]
-  const off = xfrm?.getElementsByTagName('a:off')[0]
-  const ext = xfrm?.getElementsByTagName('a:ext')[0]
+  let xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0] || spPr.getElementsByTagName('xfrm')[0]
+  let off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
+  let ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
 
   const x = off ? parseInt(off.getAttribute('x') || '0') : 0
   const y = off ? parseInt(off.getAttribute('y') || '0') : 0
@@ -79,7 +139,8 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
   const cy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
 
   // 获取ID
-  const id = nvSpPr?.getElementsByTagName('p:cNvPr')[0]?.getAttribute('id') || `shape-${Date.now()}-${Math.random()}`
+  let cNvPr = nvSpPr?.getElementsByTagName('p:cNvPr')[0] || nvSpPr?.getElementsByTagName('cNvPr')[0]
+  const id = cNvPr?.getAttribute('id') || `shape-${Date.now()}-${Math.random()}`
 
   // 如果有文本内容，创建文本元素
   if (txBody) {
@@ -119,16 +180,27 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
  * 解析图片
  */
 function parsePicture(pic: Element, theme: any): PPTXElement | null {
-  const nvPicPr = pic.getElementsByTagName('p:nvPicPr')[0]
-  const blipFill = pic.getElementsByTagName('a:blipFill')[0]
-  const spPr = pic.getElementsByTagName('p:spPr')[0]
+  let nvPicPr = pic.getElementsByTagName('p:nvPicPr')[0] || pic.getElementsByTagName('nvPicPr')[0]
+  let blipFill = pic.getElementsByTagName('a:blipFill')[0] || pic.getElementsByTagName('blipFill')[0]
+  let spPr = pic.getElementsByTagName('p:spPr')[0] || pic.getElementsByTagName('spPr')[0]
+
+  if (!spPr) {
+    // 使用 localName 查找
+    const allChildren = pic.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'spPr') {
+        spPr = allChildren[i]
+        break
+      }
+    }
+  }
 
   if (!blipFill || !spPr) return null
 
   // 获取位置和尺寸
-  const xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0]
-  const off = xfrm?.getElementsByTagName('a:off')[0]
-  const ext = xfrm?.getElementsByTagName('a:ext')[0]
+  let xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0] || spPr.getElementsByTagName('xfrm')[0]
+  let off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
+  let ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
 
   const x = off ? parseInt(off.getAttribute('x') || '0') : 0
   const y = off ? parseInt(off.getAttribute('y') || '0') : 0
@@ -136,11 +208,12 @@ function parsePicture(pic: Element, theme: any): PPTXElement | null {
   const cy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
 
   // 获取ID
-  const id = nvPicPr?.getElementsByTagName('p:cNvPr')[0]?.getAttribute('id') || `image-${Date.now()}-${Math.random()}`
+  let cNvPr = nvPicPr?.getElementsByTagName('p:cNvPr')[0] || nvPicPr?.getElementsByTagName('cNvPr')[0]
+  const id = cNvPr?.getAttribute('id') || `image-${Date.now()}-${Math.random()}`
 
   // 获取图片关系ID
-  const blip = blipFill.getElementsByTagName('a:blip')[0]
-  const blipRelId = blip?.getAttribute('r:embed')
+  let blip = blipFill.getElementsByTagName('a:blip')[0] || blipFill.getElementsByTagName('blip')[0]
+  const blipRelId = blip?.getAttribute('r:embed') || blip?.getAttribute('embed')
 
   return {
     type: 'image',
@@ -161,7 +234,10 @@ function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
   const elements: PPTXElement[] = []
 
   // 解析组内的形状
-  const shapes = grpSp.getElementsByTagName('p:sp')
+  let shapes = grpSp.getElementsByTagName('p:sp')
+  if (shapes.length === 0) {
+    shapes = grpSp.getElementsByTagName('sp')
+  }
   for (let i = 0; i < shapes.length; i++) {
     const element = parseShape(shapes[i], theme)
     if (element) {
@@ -170,7 +246,10 @@ function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
   }
 
   // 解析组内的图片
-  const pics = grpSp.getElementsByTagName('p:pic')
+  let pics = grpSp.getElementsByTagName('p:pic')
+  if (pics.length === 0) {
+    pics = grpSp.getElementsByTagName('pic')
+  }
   for (let i = 0; i < pics.length; i++) {
     const element = parsePicture(pics[i], theme)
     if (element) {
@@ -187,10 +266,10 @@ function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
 function parseTextStyle(txBody: Element, theme: any): any {
   const style: any = {}
 
-  const p = txBody.getElementsByTagName('a:p')[0]
+  let p = txBody.getElementsByTagName('a:p')[0] || txBody.getElementsByTagName('p')[0]
   if (!p) return style
 
-  const pPr = p.getElementsByTagName('a:pPr')[0]
+  let pPr = p.getElementsByTagName('a:pPr')[0] || p.getElementsByTagName('pPr')[0]
   if (pPr) {
     const algn = pPr.getAttribute('algn')
     if (algn) {
@@ -198,9 +277,9 @@ function parseTextStyle(txBody: Element, theme: any): any {
     }
   }
 
-  const r = p.getElementsByTagName('a:r')[0]
+  let r = p.getElementsByTagName('a:r')[0] || p.getElementsByTagName('r')[0]
   if (r) {
-    const rPr = r.getElementsByTagName('a:rPr')[0]
+    let rPr = r.getElementsByTagName('a:rPr')[0] || r.getElementsByTagName('rPr')[0]
     if (rPr) {
       const sz = rPr.getAttribute('sz')
       if (sz) {
@@ -222,7 +301,7 @@ function parseTextStyle(txBody: Element, theme: any): any {
         style.underline = true
       }
 
-      const solidFill = rPr.getElementsByTagName('a:solidFill')[0]
+      let solidFill = rPr.getElementsByTagName('a:solidFill')[0] || rPr.getElementsByTagName('solidFill')[0]
       if (solidFill) {
         style.color = parseColor(solidFill, theme)
       }
@@ -236,7 +315,7 @@ function parseTextStyle(txBody: Element, theme: any): any {
  * 解析填充
  */
 function parseFill(spPr: Element, theme: any): string | undefined {
-  const solidFill = spPr.getElementsByTagName('a:solidFill')[0]
+  let solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
   if (!solidFill) return undefined
 
   return parseColor(solidFill, theme)
@@ -246,10 +325,10 @@ function parseFill(spPr: Element, theme: any): string | undefined {
  * 解析描边
  */
 function parseStroke(spPr: Element, theme: any): string | undefined {
-  const ln = spPr.getElementsByTagName('a:ln')[0]
+  let ln = spPr.getElementsByTagName('a:ln')[0] || spPr.getElementsByTagName('ln')[0]
   if (!ln) return undefined
 
-  const solidFill = ln.getElementsByTagName('a:solidFill')[0]
+  let solidFill = ln.getElementsByTagName('a:solidFill')[0] || ln.getElementsByTagName('solidFill')[0]
   if (!solidFill) return undefined
 
   return parseColor(solidFill, theme)
