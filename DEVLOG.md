@@ -300,5 +300,124 @@ renderAsync(data, bodyContainer, styleContainer, options)
 
 ---
 
+## 🎨 2026年1月31日 - Word预览样式优化
+
+### 问题背景
+用户反馈Word预览界面缺少白色背景，需要优化为类似Office的显示效果：
+- 每页应该是白色背景
+- 每页之间有间距
+- 文字区域显示白色背景
+
+### 解决方案
+
+#### 1. 样式优化 (main.vue)
+
+**调整页面容器布局**
+```css
+.vue-office-docx {
+  padding: 30px 20px;
+  background-color: #f5f5f5;  /* 柔和的灰色背景 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;  /* 居中显示 */
+}
+
+.docx-wrapper {
+  gap: 16px !important;  /* 每页之间的间距 */
+}
+```
+
+**优化每页样式**
+```css
+.docx-wrapper section.docx {
+  margin: 0 !important;
+  padding: 25.4mm 31.8mm !important;  /* Word默认页边距 */
+  width: 210mm !important;  /* A4宽度 */
+  min-height: 297mm !important;  /* A4高度 */
+  background-color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 2px;
+}
+```
+
+#### 2. 渲染后处理 (docx.ts)
+
+**新增页面处理函数**
+```typescript
+/**
+ * 处理每一页的样式 - 给每页添加白色背景
+ */
+function processPages(docxContainer: HTMLElement): void {
+  // docx-preview 渲染的结构是: .docx-preview-wrapper > section.docx-preview
+  const sections = docxContainer.querySelectorAll('section')
+
+  sections.forEach((section) => {
+    const el = section as HTMLElement
+
+    // 强制设置白色背景
+    el.style.backgroundColor = '#ffffff'
+    el.style.setProperty('background-color', '#ffffff', 'important')
+
+    // 处理所有子元素，确保背景透明（保留背景图）
+    const allChildren = el.querySelectorAll('*')
+    allChildren.forEach(child => {
+      const childEl = child as HTMLElement
+      const hasBgImage = childEl.style.backgroundImage && childEl.style.backgroundImage !== 'none'
+      if (!hasBgImage) {
+        childEl.style.backgroundColor = 'transparent'
+        childEl.style.setProperty('background-color', 'transparent', 'important')
+      }
+    })
+  })
+}
+```
+
+**在render函数中调用**
+```typescript
+await renderAsync(blob, docxContainer, styleElement, renderOptions)
+
+// 渲染完成后，处理每一页的样式
+await nextTick()
+processPages(docxContainer)
+```
+
+### 关键发现
+
+**docx-preview 实际渲染的HTML结构**
+```html
+<div class="docx-preview-wrapper">
+  <section class="docx-preview" style="padding: 70.9pt 56.7pt 56.7pt 70.9pt; ...">
+    <article>
+      <!-- 文档内容 -->
+    </article>
+  </section>
+</div>
+```
+
+- 类名是 `docx-preview`，不是 `docx`
+- 需要选择 `section` 元素来处理页面
+- 内联样式会覆盖CSS，需要用 `setProperty('!important')` 强制覆盖
+
+### 最终效果
+- ✅ 每页白色背景
+- ✅ 每页间距 16px
+- ✅ Word 标准页边距 (2.54cm / 3.18cm)
+- ✅ 保留背景图显示
+- ✅ 居中布局，类似Office效果
+
+### Git提交
+```bash
+commit 1ba2dcd
+style: 优化Word预览样式，实现每页白色背景效果
+```
+
+### 相关文件
+- [`packages/vue-docx/src/docx.ts`](packages/vue-docx/src/docx.ts:7-43)
+- [`packages/vue-docx/src/main.vue`](packages/vue-docx/src/main.vue:68-140)
+
+---
+
 *生成时间: 2025年1月30日*
 *开发者: Claude Sonnet 4.5*
+*更新时间: 2026年1月31日*
+*更新者: Claude (glm-4.7)*
