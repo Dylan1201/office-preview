@@ -70,39 +70,77 @@ watch(
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 20px;
-  background-color: #e0e0e0;
+  padding: 30px 20px;
+  background-color: #f5f5f5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .vue-office-docx-main {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* docx-preview的外层wrapper */
 .docx-wrapper {
   background-color: transparent !important;
   padding: 0 !important;
-  margin: 0 auto !important;
+  margin: 0 !important;
   max-width: 100% !important;
+  width: fit-content !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important; /* 每页之间的间距 */
 }
 
 /* 每一页的样式 - 模拟A4纸张 */
 .docx-wrapper section.docx {
   position: relative !important;
-  margin: 20px auto !important;
-  padding: 20mm 25mm !important; /* 标准Word页边距 */
+  margin: 0 !important;
+  padding: 25.4mm 31.8mm !important; /* Word默认页边距: 上下2.54cm, 左右3.18cm */
   width: 210mm !important; /* A4宽度 */
   min-height: 297mm !important; /* A4高度 */
-  background: white !important;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2) !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
   box-sizing: border-box !important;
   page-break-after: always !important;
-  overflow: hidden !important;
+  overflow: visible !important;
+  border-radius: 2px;
 }
 
-/* 确保背景图片和颜色正确显示 */
-.docx-wrapper section.docx > * {
-  position: relative !important;
+/* 页面内容区域 - 确保显示白色背景（覆盖所有内部元素的背景色） */
+.docx-wrapper section.docx > *,
+.docx-wrapper section.docx div,
+.docx-wrapper section.docx article,
+.docx-wrapper section.docx .docx-body,
+.docx-wrapper section.docx .docx-body > *,
+.docx-wrapper section.docx p,
+.docx-wrapper section.docx span,
+.docx-wrapper section.docx [class*="docx"] {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* docx-preview 生成的内部容器样式 */
+.docx-wrapper > div,
+.docx-wrapper > div > div {
+  background-color: transparent !important;
+}
+
+/* 确保背景图片和颜色正确显示 - 背景图元素 */
+.docx-wrapper section.docx > .docx-bg,
+.docx-wrapper section.docx > [style*="background-image"],
+.docx-wrapper section.docx > [style*="background-image"]::before {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
 }
 
 /* 表格样式 */
@@ -193,18 +231,17 @@ watch(
 /* 响应式 - 小屏幕适配 */
 @media screen and (max-width: 900px) {
   .vue-office-docx {
-    padding: 10px !important;
+    padding: 15px 10px !important;
   }
 
   .docx-wrapper {
-    max-width: 100% !important;
+    width: 100% !important;
   }
 
   .docx-wrapper section.docx {
-    padding: 15mm !important;
+    padding: 15mm 20mm !important;
     width: 100% !important;
     min-height: auto !important;
-    margin: 10px auto !important;
   }
 }
 
