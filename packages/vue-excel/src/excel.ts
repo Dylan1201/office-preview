@@ -265,14 +265,21 @@ function getStyle(cell: ExcelJS.Cell): any {
  * 转换列配置
  */
 function transferColumns(excelSheet: ExcelJS.Worksheet, spreadSheet: any, options: ExcelOptions) {
-  for (let i = 0; i < (excelSheet.columns || []).length; i++) {
+  const columns = excelSheet.columns || []
+
+  for (let i = 0; i < columns.length; i++) {
+    const col = columns[i]
+    if (!col) continue
+
     spreadSheet.cols[i.toString()] = {}
-    if (excelSheet.columns[i]?._hidden) {
+    if (col._hidden) {
       spreadSheet.cols[i.toString()].width = 0.1
-    } else if (excelSheet.columns[i]?.width) {
-      spreadSheet.cols[i.toString()].width = excelSheet.columns[i].width * 6 + (options.widthOffset || 0)
+    } else if (col.width) {
+      // Excel列宽转换：1个Excel单位 = 7像素
+      // 略小于官方标准7.5，让列更紧凑一些
+      spreadSheet.cols[i.toString()].width = Math.round(col.width * 7)
     } else {
-      spreadSheet.cols[i.toString()].width = defaultColWidth + (options.widthOffset || 0)
+      spreadSheet.cols[i.toString()].width = defaultColWidth
     }
   }
 
@@ -303,12 +310,8 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
 
     // 收集合并单元格信息
     const mergeAddressData: any[] = []
-    console.log('[Excel Debug] Processing sheet:', sheet.name)
-    console.log('[Excel Debug] sheet._merges:', sheet._merges)
-
     for (const mergeRange in sheet._merges) {
       const merge = sheet._merges[mergeRange]
-      console.log('[Excel Debug] merge:', merge)
       sheetData.merges.push(merge.shortRange)
 
       const mergeAddress: any = {
@@ -317,17 +320,13 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
         YRange: merge.model.bottom - merge.model.top,
         XRange: merge.model.right - merge.model.left
       }
-      console.log('[Excel Debug] mergeAddress:', mergeAddress)
       mergeAddressData.push(mergeAddress)
     }
-
-    console.log('[Excel Debug] mergeAddressData:', mergeAddressData)
-    console.log('[Excel Debug] sheetData.merges:', sheetData.merges)
 
     let effectiveMaxColLen = 0
 
     // 遍历行
-    const rows = sheet._rows ? Array.from(sheet._rows) : []
+    const rows = sheet._rows ? Array.from(sheet._rows).filter(r => r) : []
     rows.forEach((row, rowIndex) => {
       sheetData.rows[rowIndex] = { cells: {} }
 
@@ -344,19 +343,18 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
       cells.forEach((cell) => {
         // 使用cell的实际列号，而不是数组索引
         const colIndex = cell.col - 1  // ExcelJS的col是从1开始的
+
+        // 检查是否是被合并的单元格（非主单元格）
+        if (cell.master && cell.master.address !== cell._address) {
+          return
+        }
+
         sheetData.rows[rowIndex].cells[colIndex] = {}
         effectiveMaxColLen = Math.max(effectiveMaxColLen, colIndex)
 
         const mergeAddress = find(mergeAddressData, o => o.startAddress === cell._address)
-        console.log('[Excel Debug] cell:', cell._address, 'colIndex:', colIndex, 'mergeAddress:', mergeAddress, 'cell.master:', cell.master)
-
-        if (mergeAddress && cell.master?.address !== mergeAddress.startAddress) {
-          console.log('[Excel Debug] Skipping merged cell (not master)')
-          return
-        }
 
         if (mergeAddress) {
-          console.log('[Excel Debug] Applying merge to cell:', cell._address, 'merge:', [mergeAddress.YRange, mergeAddress.XRange])
           sheetData.rows[rowIndex].cells[colIndex].merge = [mergeAddress.YRange, mergeAddress.XRange]
         }
 
@@ -383,8 +381,6 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
     }
 
     transferColumns(sheet, sheetData, options)
-
-    console.log('[Excel Debug] Final sheetData rows:', sheetData.rows)
     workbookData.push(sheetData)
   })
 

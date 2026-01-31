@@ -16,18 +16,29 @@
       </div>
       <div class="sheet-container">
         <table class="excel-table" :style="tableStyle">
+          <colgroup>
+            <col class="col-row-header">
+            <col
+              v-for="(width, index) in currentData.colsArray"
+              :key="index"
+              :style="{ width: width + 'px' }"
+            >
+          </colgroup>
           <tbody>
             <tr v-for="(row, ri) in currentData.rowsArray" :key="ri">
               <th class="row-header">{{ ri + 1 }}</th>
-              <td
-                v-for="(cell, ci) in getSortedCells(row.cells)"
-                :key="ci"
-                :style="getCellStyle(cell)"
-                :colspan="cell.merge?.[1] + 1"
-                :rowspan="cell.merge?.[0] + 1"
-              >
-                {{ cell.text }}
-              </td>
+              <template v-for="(item, ci) in getSortedCells(row.cells)" :key="ci">
+                <td
+                  :data-col-index="item.colIndex"
+                  :style="getCellStyle(item.cell)"
+                  :class="{ 'cell-selected': isCellSelected(ri, item.colIndex) && !cellHasBackgroundColor(item.cell) }"
+                  :colspan="item.cell.merge ? item.cell.merge[1] + 1 : undefined"
+                  :rowspan="item.cell.merge ? item.cell.merge[0] + 1 : undefined"
+                  @click="handleCellClick(ri, item.colIndex, item.cell)"
+                >
+                  {{ item.cell.text }}
+                </td>
+              </template>
             </tr>
           </tbody>
         </table>
@@ -39,14 +50,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { getData, readExcelData, transferExcelToSpreadSheet } from './excel'
-import type { ExcelProps, ExcelEmits } from './types'
+import type { ExcelProps } from './types'
 
 const props = withDefaults(defineProps<ExcelProps>(), {
   requestOptions: () => ({}),
   options: () => ({})
 })
 
-const emit = defineEmits<ExcelEmits>()
+const emit = defineEmits<{
+  rendered: []
+  error: [e: Error]
+  switchSheet: [index: number]
+  cellClick: [data: { rowIndex: number; colIndex: number; cell: any }]
+  cellSelected: [data: { cell: any; rowIndex: number; columnIndex: number }]
+  cellsSelected: [data: { cell: any; startRowIndex: number; startColumnIndex: number; endRowIndex: number; endColumnIndex: number }]
+}>()
 
 const wrapperRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
@@ -55,49 +73,64 @@ const error = ref('')
 const allSheets = ref<any[]>([])
 const currentSheet = ref(0)
 
+// 单元格选中状态
+const selectedCell = ref<{ rowIndex: number; colIndex: number } | null>(null)
+
+// TODO: 实现拖动框选多个单元格功能（类似 Excel）
+// - 鼠标按下开始拖动
+// - 鼠标移动更新选中范围
+// - 合并单元格选中时应该选中整个合并区域
+// - 只显示选区外层边框，内部不显示边框
+// - 有背景色的单元格不应用选中背景色
+
 const defaultOptions = {
   xls: false,
-  minColLength: 20
+  minColLength: 0  // 不强制生成最小列数，只使用实际数据
 }
 
 const hasData = computed(() => allSheets.value.length > 0 && allSheets.value[0].rows && Object.keys(allSheets.value[0].rows).length > 0)
 
 const currentData = computed(() => {
   const sheet = allSheets.value[currentSheet.value]
-  if (!sheet || !sheet.rows) return { rows: [], rowsArray: [] }
+  if (!sheet || !sheet.rows) return { rows: [], rowsArray: [], colsArray: [] }
   // 将对象转换为数组，按索引排序
   const rowsArray = Object.keys(sheet.rows)
     .map(k => parseInt(k))
     .filter(k => !isNaN(k))
     .sort((a, b) => a - b)
     .map(k => sheet.rows[k])
+
+  // 计算实际有数据的最大列数
+  let maxColIndex = 0
+  Object.values(sheet.rows || {}).forEach((row: any) => {
+    if (row && row.cells) {
+      Object.keys(row.cells).forEach((colKey) => {
+        const colIndex = parseInt(colKey)
+        if (!isNaN(colIndex)) {
+          maxColIndex = Math.max(maxColIndex, colIndex)
+        }
+      })
+    }
+  })
+
+  // 将列宽对象转换为数组，只生成到maxColIndex
+  const colsArray = []
+  for (let i = 0; i <= maxColIndex; i++) {
+    const colData = sheet.cols?.[i.toString()]
+    colsArray.push(colData?.width || 80)
+  }
+
   return {
     ...sheet,
-    rowsArray
+    rowsArray,
+    colsArray
   }
 })
 
 const sheetNames = computed(() => allSheets.value.map(s => s.name || 'Sheet'))
 
 const tableStyle = computed(() => {
-  const rows = currentData.value.rowsArray || []
-  if (rows.length === 0) return {}
-
-  // 计算列宽
-  let maxCols = 0
-  rows.forEach((row: any) => {
-    if (!row || !row.cells) return
-    Object.keys(row.cells).forEach((colKey) => {
-      const colIndex = parseInt(colKey)
-      if (!isNaN(colIndex)) {
-        maxCols = Math.max(maxCols, colIndex + 1)
-      }
-    })
-  })
-
-  return {
-    minWidth: `${maxCols * 100}px`
-  }
+  return {}
 })
 
 function getCellStyle(cell: any): any {
@@ -121,18 +154,46 @@ function getCellStyle(cell: any): any {
   return styles
 }
 
-function getSortedCells(cells: any): any[] {
+/**
+ * 检查单元格是否有背景色
+ * 有背景色的单元格不应用选中背景色
+ */
+function cellHasBackgroundColor(cell: any): boolean {
+  if (!cell || !cell.style) return false
+  const style = (allSheets.value[currentSheet.value].styles || [])[cell.style] || {}
+  return !!style.bgcolor
+}
+
+function getSortedCells(cells: any): { cell: any; colIndex: number }[] {
   if (!cells) return []
   return Object.keys(cells)
     .map(k => parseInt(k))
     .filter(k => !isNaN(k))
     .sort((a, b) => a - b)
-    .map(k => cells[k])
-    .filter(cell => cell !== undefined)
+    .map(k => ({ cell: cells[k], colIndex: k }))
+    .filter(item => item.cell !== undefined)
+}
+
+/**
+ * 处理单元格点击
+ */
+function handleCellClick(rowIndex: number, colIndex: number, cell: any) {
+  selectedCell.value = { rowIndex, colIndex }
+  emit('cellClick', { rowIndex, colIndex, cell })
+}
+
+/**
+ * 检查单元格是否被选中
+ */
+function isCellSelected(rowIndex: number, colIndex: number): boolean {
+  if (!selectedCell.value) return false
+  return selectedCell.value.rowIndex === rowIndex && selectedCell.value.colIndex === colIndex
 }
 
 function switchSheet(index: number) {
   currentSheet.value = index
+  // 切换工作表时清除选中状态
+  selectedCell.value = null
   emit('switchSheet', index)
 }
 
@@ -149,7 +210,6 @@ async function renderExcel(buffer: ArrayBuffer) {
 
     const { workbookData } = transferExcelToSpreadSheet(workbook, { ...defaultOptions, ...props.options })
 
-    console.log('[Excel Debug] workbookData:', workbookData)
     allSheets.value = workbookData
     currentSheet.value = 0
     loading.value = false
@@ -267,7 +327,8 @@ watch(
 
 .excel-table {
   border-collapse: collapse;
-  width: 100%;
+  width: auto;
+  table-layout: fixed;
   font-size: 13px;
 }
 
@@ -275,8 +336,30 @@ watch(
 .excel-table td {
   border: 1px solid #ddd;
   padding: 4px 8px;
-  min-width: 80px;
   height: 24px;
+  box-sizing: border-box;
+}
+
+.excel-table td {
+  cursor: cell;
+  user-select: none;
+}
+
+.excel-table td:hover {
+  background-color: #f0f8ff;
+}
+
+.excel-table td.cell-selected {
+  background-color: rgba(25, 118, 210, 0.15);
+}
+
+/* 有背景色的单元格不应用选中背景色 */
+.excel-table td.cell-selected[style*="background-color"] {
+  background-color: auto !important;
+}
+
+.col-row-header {
+  width: 40px;
 }
 
 .row-header {
@@ -284,7 +367,5 @@ watch(
   text-align: center;
   font-weight: normal;
   color: #666;
-  width: 40px;
-  min-width: 40px;
 }
 </style>

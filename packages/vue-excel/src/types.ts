@@ -42,6 +42,8 @@ export interface ExcelEmits {
   (event: 'error', error: Error): void
   /** 切换工作表 */
   (event: 'switchSheet', index: number): void
+  /** 单元格点击 */
+  (event: 'cellClick', data: { rowIndex: number; colIndex: number; cell: any }): void
   /** 单元格选中 */
   (event: 'cellSelected', data: CellSelectedData): void
   /** 多个单元格选中 */
