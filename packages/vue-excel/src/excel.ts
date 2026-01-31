@@ -332,7 +332,7 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
         sheetData.rows[rowIndex].height = defaultRowHeight + (options.heightOffset || 0)
       }
 
-      const cells = row._cells ? Array.from(row._cells) : []
+      const cells = row._cells ? Array.from(row._cells).filter(c => c) : []
       cells.forEach((cell, colIndex) => {
         sheetData.rows[rowIndex].cells[colIndex] = {}
         effectiveMaxColLen = Math.max(effectiveMaxColLen, colIndex)
