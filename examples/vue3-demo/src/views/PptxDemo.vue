@@ -9,11 +9,17 @@
         class="input"
       >
       <button class="btn" @click="loadUrl">加载URL</button>
+      <div class="zoom-controls">
+        <button class="btn btn-zoom" @click="zoomOut">-</button>
+        <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
+        <button class="btn btn-zoom" @click="zoomIn">+</button>
+        <button class="btn" @click="resetZoom">重置</button>
+      </div>
     </div>
     <div class="demo-status" v-if="status">
       {{ status }}
     </div>
-    <div class="demo-preview" v-if="currentSrc">
+    <div class="demo-preview" v-if="currentSrc" :style="{ zoom: zoom }">
       <vue-office-pptx :src="currentSrc" @rendered="onRendered" @error="onError" @slideChange="onSlideChange" />
     </div>
     <div class="demo-placeholder" v-else>
@@ -30,6 +36,23 @@ const pptxUrl = ref('')
 const currentSrc = ref<string | ArrayBuffer>('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const status = ref('')
+const zoom = ref(1)
+
+const zoomIn = () => {
+  if (zoom.value < 2) {
+    zoom.value = Math.min(2, zoom.value + 0.1)
+  }
+}
+
+const zoomOut = () => {
+  if (zoom.value > 0.5) {
+    zoom.value = Math.max(0.5, zoom.value - 0.1)
+  }
+}
+
+const resetZoom = () => {
+  zoom.value = 1
+}
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -84,6 +107,26 @@ const onSlideChange = (index: number) => {
   align-items: center;
   background-color: white;
   border-bottom: 1px solid #e0e0e0;
+  flex-wrap: wrap;
+}
+
+.zoom-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.zoom-label {
+  min-width: 50px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.btn-zoom {
+  min-width: 36px;
+  padding: 8px 12px;
 }
 
 .btn {
