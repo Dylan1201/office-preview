@@ -303,8 +303,12 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
 
     // 收集合并单元格信息
     const mergeAddressData: any[] = []
+    console.log('[Excel Debug] Processing sheet:', sheet.name)
+    console.log('[Excel Debug] sheet._merges:', sheet._merges)
+
     for (const mergeRange in sheet._merges) {
       const merge = sheet._merges[mergeRange]
+      console.log('[Excel Debug] merge:', merge)
       sheetData.merges.push(merge.shortRange)
 
       const mergeAddress: any = {
@@ -313,8 +317,12 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
         YRange: merge.model.bottom - merge.model.top,
         XRange: merge.model.right - merge.model.left
       }
+      console.log('[Excel Debug] mergeAddress:', mergeAddress)
       mergeAddressData.push(mergeAddress)
     }
+
+    console.log('[Excel Debug] mergeAddressData:', mergeAddressData)
+    console.log('[Excel Debug] sheetData.merges:', sheetData.merges)
 
     let effectiveMaxColLen = 0
 
@@ -340,11 +348,15 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
         effectiveMaxColLen = Math.max(effectiveMaxColLen, colIndex)
 
         const mergeAddress = find(mergeAddressData, o => o.startAddress === cell._address)
+        console.log('[Excel Debug] cell:', cell._address, 'colIndex:', colIndex, 'mergeAddress:', mergeAddress, 'cell.master:', cell.master)
+
         if (mergeAddress && cell.master?.address !== mergeAddress.startAddress) {
+          console.log('[Excel Debug] Skipping merged cell (not master)')
           return
         }
 
         if (mergeAddress) {
+          console.log('[Excel Debug] Applying merge to cell:', cell._address, 'merge:', [mergeAddress.YRange, mergeAddress.XRange])
           sheetData.rows[rowIndex].cells[colIndex].merge = [mergeAddress.YRange, mergeAddress.XRange]
         }
 
@@ -371,6 +383,8 @@ export function transferExcelToSpreadSheet(workbook: ExcelJS.Workbook, options: 
     }
 
     transferColumns(sheet, sheetData, options)
+
+    console.log('[Excel Debug] Final sheetData rows:', sheetData.rows)
     workbookData.push(sheetData)
   })
 

@@ -149,6 +149,7 @@ async function renderExcel(buffer: ArrayBuffer) {
 
     const { workbookData } = transferExcelToSpreadSheet(workbook, { ...defaultOptions, ...props.options })
 
+    console.log('[Excel Debug] workbookData:', workbookData)
     allSheets.value = workbookData
     currentSheet.value = 0
     loading.value = false
