@@ -66,6 +66,7 @@ watch(
 </script>
 
 <style>
+/* 外层容器 - 只负责布局，不影响内部样式 */
 .vue-office-docx {
   height: 100%;
   overflow-y: auto;
@@ -84,183 +85,153 @@ watch(
   align-items: center;
 }
 
-/* docx-preview的外层wrapper */
+/* docx-preview的外层wrapper - 只设置布局样式 */
 .docx-wrapper {
-  background-color: transparent !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  max-width: 100% !important;
-  width: fit-content !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 16px !important; /* 每页之间的间距 */
+  background-color: transparent;
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+  width: fit-content;
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* 每页之间的间距 */
 }
 
-/* 每一页的样式 - 模拟A4纸张 */
-.docx-wrapper section.docx {
-  position: relative !important;
-  margin: 0 !important;
-  padding: 25.4mm 31.8mm !important; /* Word默认页边距: 上下2.54cm, 左右3.18cm */
-  width: 210mm !important; /* A4宽度 */
-  min-height: 297mm !important; /* A4高度 */
-  background-color: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-  box-sizing: border-box !important;
-  page-break-after: always !important;
-  overflow: visible !important;
+/* 每一页的基本布局 - 只设置布局相关样式，不覆盖内容样式 */
+.docx-wrapper section.docx,
+.docx-wrapper section.docx-preview {
+  position: relative;
+  margin: 0 0 16px 0;  /* 添加下边距，区分每一页 */
+  width: 210mm; /* A4宽度 */
+  min-height: 297mm; /* A4高度 */
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  page-break-after: always;
+  overflow: visible;
   border-radius: 2px;
 }
 
-/* 页面内容区域 - 确保显示白色背景（覆盖所有内部元素的背景色） */
-.docx-wrapper section.docx > *,
-.docx-wrapper section.docx div,
-.docx-wrapper section.docx article,
-.docx-wrapper section.docx .docx-body,
-.docx-wrapper section.docx .docx-body > *,
-.docx-wrapper section.docx p,
-.docx-wrapper section.docx span,
-.docx-wrapper section.docx [class*="docx"] {
-  background-color: transparent !important;
-  background-image: none !important;
-}
+/* 页边距由 docx-preview 通过内联样式自动设置，不要覆盖 */
 
-/* docx-preview 生成的内部容器样式 */
-.docx-wrapper > div,
-.docx-wrapper > div > div {
-  background-color: transparent !important;
-}
+/* 不再强制覆盖内部元素的样式，让 docx-preview 的原始样式生效 */
 
-/* 确保背景图片和颜色正确显示 - 背景图元素 */
-.docx-wrapper section.docx > .docx-bg,
-.docx-wrapper section.docx > [style*="background-image"],
-.docx-wrapper section.docx > [style*="background-image"]::before {
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  z-index: 0 !important;
-  pointer-events: none !important;
-}
-
-/* 表格样式 */
+/* 表格基础属性 - 不使用!important，只设置docx-preview遗漏的属性 */
 .docx-wrapper table {
-  border-collapse: collapse !important;
-  width: 100% !important;
+  /* 这些属性docx-preview没有设置，导致表格无法正确显示 */
+  border-collapse: collapse;  /* 合并边框，让1+1=1而不是1+1=2 */
+  table-layout: auto;  /* 使用auto布局，让列宽按内容或设置显示 */
 }
 
+/* 单元格基础边框 - 为没有明确边框样式的表格添加默认边框 */
 .docx-wrapper td,
 .docx-wrapper th {
-  border: 1px solid #999 !important;
-  padding: 4px 8px !important;
-  vertical-align: top !important;
+  /* 只在没有边框样式时应用，不覆盖原文档的边框 */
+  border: 1px solid #ddd;
 }
 
-.docx-wrapper th {
-  background-color: #f0f0f0 !important;
-  font-weight: bold !important;
+/* 表格斑马纹 - docx-preview已经识别了odd-row/even-row类名 */
+.docx-wrapper tr.odd-row td {
+  background-color: #ffffff;
 }
 
-/* 段落和标题样式 */
+.docx-wrapper tr.even-row td {
+  background-color: #f2f2f2;
+}
+
+/* 如果有其他背景色，优先级更高，不会被覆盖 */
+
+/* 文字换行 - 确保长文本能正确换行，不溢出 */
 .docx-wrapper p {
-  margin: 0 0 8px 0 !important;
-  line-height: 1.4 !important;
+  /* 允许长单词和连续字符换行，防止溢出 */
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+  line-height: 1.4;
 }
 
-.docx-wrapper h1 {
-  font-size: 24pt !important;
-  margin: 16pt 0 12pt 0 !important;
-  font-weight: bold !important;
+/* 有内容的段落 - 添加底部间距 */
+.docx-wrapper p:not(:empty) {
+  margin-bottom: 20px !important;
 }
 
-.docx-wrapper h2 {
-  font-size: 20pt !important;
-  margin: 14pt 0 10pt 0 !important;
-  font-weight: bold !important;
+/* 空段落 - Word标准空段落高度约为14pt（约19px） */
+.docx-wrapper p:empty,
+.docx-wrapper p:has(span:empty),
+.docx-wrapper p span:empty {
+  min-height: 19px !important;  /* 14pt ≈ 19px */
+  display: block;
 }
 
-.docx-wrapper h3 {
-  font-size: 16pt !important;
-  margin: 12pt 0 8pt 0 !important;
-  font-weight: bold !important;
+/* 确保空段落是可见的 */
+.docx-wrapper p:empty::before,
+.docx-wrapper p:has(span:empty):before {
+  content: "";
+  display: inline-block;
 }
 
-/* 列表样式 */
-.docx-wrapper ul,
-.docx-wrapper ol {
-  margin: 8px 0 !important;
-  padding-left: 30px !important;
+/* 引用样式 - 合并相邻的带背景色的段落，模拟引用框效果 */
+.docx-wrapper p[style*="background-color: rgb(245, 245, 245)"] {
+  border-left: 4px solid #ddd;
+  border-right: 1px solid #ddd;
+  border-top: 1px solid #ddd;
+  border-bottom: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin: 16px 0 !important;
+  background-color: rgb(245, 245, 245) !important;
 }
 
-.docx-wrapper li {
-  margin: 4px 0 !important;
-  line-height: 1.4 !important;
+/* 标题间距 */
+.docx-wrapper h1,
+.docx-wrapper h2,
+.docx-wrapper h3,
+.docx-wrapper h4,
+.docx-wrapper h5,
+.docx-wrapper h6 {
+  margin-bottom: 12px;
+  margin-top: 16px;
 }
 
-/* 图片样式 */
-.docx-wrapper img {
-  max-width: 100% !important;
-  height: auto !important;
-  display: block !important;
-}
-
-/* 目录样式 */
-.docx-wrapper .docx-toc {
-  padding: 15px 0 !important;
-  margin: 10px 0 !important;
-}
-
-.docx-wrapper .docx-toc-title {
-  font-size: 18px !important;
-  font-weight: bold !important;
-  margin-bottom: 15px !important;
-}
-
-.docx-wrapper .docx-toc-item {
-  margin: 8px 0 !important;
-  line-height: 1.6 !important;
-}
-
-/* 分页符样式 */
-.docx-wrapper .docx-page-break {
-  page-break-after: always !important;
-  height: 0 !important;
-  border: none !important;
+.docx-wrapper h1:first-child,
+.docx-wrapper h2:first-child,
+.docx-wrapper h3:first-child {
+  margin-top: 0;
 }
 
 /* 响应式 - 小屏幕适配 */
 @media screen and (max-width: 900px) {
   .vue-office-docx {
-    padding: 15px 10px !important;
+    padding: 15px 10px;
   }
 
   .docx-wrapper {
-    width: 100% !important;
+    width: 100%;
   }
 
   .docx-wrapper section.docx {
-    padding: 15mm 20mm !important;
-    width: 100% !important;
-    min-height: auto !important;
+    width: 100%;
+    min-height: auto;
   }
 }
 
 /* 打印样式 */
 @media print {
   .vue-office-docx {
-    background-color: white !important;
-    padding: 0 !important;
+    background-color: white;
+    padding: 0;
   }
 
   .docx-wrapper {
-    box-shadow: none !important;
-    margin: 0 !important;
+    box-shadow: none;
+    margin: 0;
   }
 
   .docx-wrapper section.docx {
-    box-shadow: none !important;
-    margin: 0 !important;
-    page-break-after: always !important;
+    box-shadow: none;
+    margin: 0;
+    page-break-after: always;
   }
 }
 </style>

@@ -13,31 +13,192 @@ function nextTick(): Promise<void> {
 
 /**
  * 处理每一页的样式 - 给每页添加白色背景
+ * 注意：只设置页面本身的背景，不覆盖子元素的样式
  */
 function processPages(docxContainer: HTMLElement): void {
   // docx-preview 渲染的结构是: .docx-preview-wrapper > section.docx-preview
   const sections = docxContainer.querySelectorAll('section')
 
+  console.log(`\n[Page Analysis] Found ${sections.length} page(s)`)
+
   sections.forEach((section, index) => {
     const el = section as HTMLElement
 
-    // 强制设置白色背景
-    el.style.backgroundColor = '#ffffff'
-    el.style.setProperty('background-color', '#ffffff', 'important')
+    // 只给页面本身设置白色背景，不使用!important避免覆盖子元素
+    // 如果页面本身已经有背景色（如背景图），则不覆盖
+    const currentBg = el.style.backgroundColor
+    if (!currentBg || currentBg === 'transparent' || currentBg === 'rgba(0, 0, 0, 0)') {
+      el.style.backgroundColor = '#ffffff'
+    }
 
-    // 处理所有子元素，确保背景透明（保留背景图）
-    const allChildren = el.querySelectorAll('*')
-    allChildren.forEach(child => {
-      const childEl = child as HTMLElement
-      const hasBgImage = childEl.style.backgroundImage && childEl.style.backgroundImage !== 'none'
-      if (!hasBgImage) {
-        childEl.style.backgroundColor = 'transparent'
-        childEl.style.setProperty('background-color', 'transparent', 'important')
-      }
+    // 检查页面是否为空
+    const textContent = el.textContent?.trim() || ''
+    const hasContent = textContent.length > 0
+    const hasImages = el.querySelectorAll('img').length > 0
+    const hasTables = el.querySelectorAll('table').length > 0
+    const reallyEmpty = !hasContent && !hasImages && !hasTables
+
+    console.log(`Page ${index + 1}:`, {
+      textLength: textContent.length,
+      textPreview: textContent.substring(0, 50),
+      hasContent,
+      hasImages,
+      hasTables,
+      reallyEmpty,
+      offsetHeight: el.offsetHeight,
+      scrollHeight: el.scrollHeight
     })
+
+    // 只依赖内容判断，不依赖高度（空白页也有A4高度的min-height）
+    if (reallyEmpty) {
+      el.style.display = 'none'
+      console.log(`  → Hidden empty page ${index + 1}`)
+    }
+
+    // 处理引用段落合并
+    mergeQuoteParagraphs(el)
   })
 
   console.log(`[processPages] processed ${sections.length} page(s)`)
+
+  // 打印换行符调试信息
+  debugLineBreaks(docxContainer)
+}
+
+/**
+ * 合并引用段落 - 将相邻的带背景色的段落合并成一个引用框
+ */
+function mergeQuoteParagraphs(section: HTMLElement): void {
+  // 查找所有带背景色的段落
+  const quoteParagraphs: HTMLElement[] = []
+  const allParagraphs = section.querySelectorAll('p')
+
+  allParagraphs.forEach((p) => {
+    const el = p as HTMLElement
+    const style = el.getAttribute('style') || ''
+    // 查找带 rgb(245, 245, 245) 或 rgb(243, 243, 243) 等浅灰背景的段落
+    if (style.includes('rgb(24') && style.includes('background-color')) {
+      quoteParagraphs.push(el)
+    }
+  })
+
+  if (quoteParagraphs.length === 0) return
+
+  console.log(`  Found ${quoteParagraphs.length} quote paragraph(s)`)
+
+  // 找出连续的引用段落组
+  const groups: HTMLElement[][] = []
+  let currentGroup: HTMLElement[] = []
+
+  allParagraphs.forEach((p) => {
+    const el = p as HTMLElement
+    const style = el.getAttribute('style') || ''
+    const isQuote = style.includes('rgb(24') && style.includes('background-color')
+
+    if (isQuote) {
+      currentGroup.push(el)
+    } else {
+      if (currentGroup.length > 0) {
+        groups.push([...currentGroup])
+        currentGroup = []
+      }
+    }
+  })
+
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup)
+  }
+
+  console.log(`  Found ${groups.length} quote group(s)`)
+
+  // 合并每组引用段落
+  groups.forEach((group, groupIndex) => {
+    if (group.length < 2) return  // 只有1个段落的不需要合并
+    const first = group[0] as HTMLElement
+    const parent = first.parentNode
+
+    if (!parent) return
+
+    // 获取第一个段落的前一个兄弟节点（在移动段落之前获取）
+    const previousSibling = first.previousSibling
+
+    // 创建新的引用框容器
+    const quoteContainer = document.createElement('div')
+    quoteContainer.className = 'docx-quote-container'
+    quoteContainer.style.cssText = `
+      background-color: rgb(245, 245, 245) !important;
+      border-left: 4px solid #ccc !important;
+      border-top: 1px solid #e0e0e0 !important;
+      border-right: 1px solid #e0e0e0 !important;
+      border-bottom: 1px solid #e0e0e0 !important;
+      border-radius: 8px !important;
+      padding: 16px 20px !important;
+      margin: 16px 0 !important;
+    `
+
+    // 将所有引用段落移到新容器中（这会从原位置移除它们）
+    group.forEach((p) => {
+      const el = p as HTMLElement
+      // 移除段落原有的背景色，只保留文本
+      el.style.backgroundColor = 'transparent'
+      el.style.marginTop = '0'
+      el.style.marginBottom = '0'
+      el.style.paddingTop = '0'
+      el.style.paddingBottom = '0'
+      quoteContainer.appendChild(el)
+    })
+
+    // 根据previousSibling插入新容器
+    if (previousSibling) {
+      // 有前一个兄弟节点，插入到它之后
+      parent.insertBefore(quoteContainer, previousSibling.nextSibling)
+    } else {
+      // 没有前一个兄弟节点，插入到父节点的开头
+      parent.insertBefore(quoteContainer, parent.firstChild)
+    }
+
+    console.log(`  Merged ${group.length} quote paragraphs into container`)
+  })
+}
+
+/**
+ * 调试换行符和段落换行
+ */
+function debugLineBreaks(docxContainer: HTMLElement): void {
+  console.log('\n[Line Break Debug] Starting analysis...')
+
+  // 打印第一页的完整HTML数据
+  const firstSection = docxContainer.querySelector('section')
+  if (firstSection) {
+    console.log('\n[First Page HTML Data]')
+    console.log('========================================')
+    console.log('First section HTML:')
+    console.log(firstSection.innerHTML)
+    console.log('========================================\n')
+  }
+
+  // 统计换行相关元素
+  const paragraphs = docxContainer.querySelectorAll('p')
+  console.log(`Found ${paragraphs.length} paragraphs total`)
+
+  // 统计br元素
+  const brElements = docxContainer.querySelectorAll('br')
+  console.log(`Total <br> elements: ${brElements.length}`)
+
+  // 统计不同类型的换行符
+  let manualLineBreaks = 0
+  let softReturns = 0
+
+  paragraphs.forEach((p) => {
+    const html = p.innerHTML
+    if (html.includes('<br')) manualLineBreaks++
+    if (html.includes('\n') || html.includes('\r')) softReturns++
+  })
+
+  console.log(`Paragraphs with <br>: ${manualLineBreaks}`)
+  console.log(`Paragraphs with \\n/\\r: ${softReturns}`)
+
+  console.log('[Line Break Debug] Analysis complete\n')
 }
 
 const defaultOptions: DocxOptions = {

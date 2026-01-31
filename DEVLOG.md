@@ -417,6 +417,71 @@ style: 优化Word预览样式，实现每页白色背景效果
 
 ---
 
+## 🎨 2026年1月31日 - Word预览样式进一步优化
+
+### 问题背景
+用户反馈Word预览样式需要进一步优化以达到更好的还原度：
+1. 引用段落应该是一个统一的容器，而不是每行独立的背景
+2. 段落行距过高，需要调整
+
+### 解决方案
+
+#### 1. 修复引用段落DOM操作错误 (docx.ts)
+
+**问题**：之前的 `insertBefore` 逻辑有误，因为 `first` 元素在执行 `appendChild` 后已经不再是 `parent` 的子节点
+
+**修复方案**：在移动段落之前获取 `previousSibling`，然后根据它来插入容器
+```typescript
+// 获取第一个段落的前一个兄弟节点（在移动段落之前获取）
+const previousSibling = first.previousSibling
+
+// 将所有引用段落移到新容器中（这会从原位置移除它们）
+group.forEach((p) => {
+  el.style.backgroundColor = 'transparent'
+  quoteContainer.appendChild(el)
+})
+
+// 根据previousSibling插入新容器
+if (previousSibling) {
+  parent.insertBefore(quoteContainer, previousSibling.nextSibling)
+} else {
+  parent.insertBefore(quoteContainer, parent.firstChild)
+}
+```
+
+#### 2. 调整段落行高和间距 (main.vue)
+
+**设置行高**
+```css
+.docx-wrapper p {
+  line-height: 1.4;  /* 减小行距 */
+}
+```
+
+**调整段落间距**
+```css
+.docx-wrapper p:not(:empty) {
+  margin-bottom: 20px !important;  /* 从24px减小到20px */
+}
+```
+
+### 最终效果
+- ✅ 引用段落合并为统一的容器，带完整边框和圆角
+- ✅ 段落行距更紧凑
+- ✅ 段落间距适中
+
+### Git提交
+```bash
+commit 43737f4
+fix: 修复Word预览功能并优化样式
+```
+
+### 相关文件
+- [`packages/vue-docx/src/docx.ts`](packages/vue-docx/src/docx.ts:114-172)
+- [`packages/vue-docx/src/main.vue`](packages/vue-docx/src/main.vue:145-156)
+
+---
+
 *生成时间: 2025年1月30日*
 *开发者: Claude Sonnet 4.5*
 *更新时间: 2026年1月31日*
