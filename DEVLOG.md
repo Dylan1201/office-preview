@@ -1372,4 +1372,68 @@ async function renderExcel(buffer: ArrayBuffer) {
 
 ---
 
+## 🔧 问题11: 完整实现表格和图表功能
+
+### 背景
+参考pptx-preview库，增强PPTX预览的表格和图表功能。
+
+### 解决方案
+
+**1. 表格完整支持**
+
+- **类型定义** - 添加表格相关接口：
+  - `PPTXCellStyle` - 单元格样式
+  - `PPTXCell` - 单元格（支持合并、文本片段）
+  - `PPTXRow` - 表格行
+  - `PPTXTableElement` - 表格元素
+  - `PPTXTableStyle` - 表格样式（斑马纹、首尾行列）
+
+- **解析器** - `parseTable`函数：
+  - 解析graphicFrame元素
+  - 解析表格行(tr)、单元格(tc)
+  - 解析单元格合并属性(rowSpan, gridSpan)
+  - 解析表格样式ID
+
+- **渲染器** - `renderTableElement`方法：
+  - HTML Table渲染
+  - 斑马纹样式(band1H, band2H)
+  - 首尾行列样式(firstRow, lastRow, firstCol, lastCol)
+  - 单元格颜色、边框、文本片段渲染
+
+**2. 图表基础支持**
+
+- **图表渲染器** - `packages/vue-pptx/src/renderer/charts.ts`：
+  - 柱状图/条形图渲染
+  - 饼图渲染
+  - 环形图渲染
+  - 折线图渲染
+  - 纯SVG实现，无第三方依赖
+
+- **类型定义**：
+  - `PPTXChartPoint` - 图表数据点
+  - `PPTXChartSeries` - 图表系列
+  - `PPTXChartElement` - 图表元素
+
+### 功能对比
+
+| 功能 | pptx-preview | 我们 | 状态 |
+|------|-------------|------|------|
+| 表格基础渲染 | ✅ | ✅ | 完成 |
+| 单元格合并 | ✅ | ✅ | 完成 |
+| 斑马纹样式 | ✅ | ✅ | 完成 |
+| 首尾行列样式 | ✅ | ✅ | 完成 |
+| 柱状图/条形图 | ✅ | ✅ | 完成 |
+| 饼图/环形图 | ✅ | ✅ | 完成 |
+| 折线图 | ✅ | ✅ | 完成 |
+| 面积图 | ✅ | 🔄 | 待实现 |
+| 散点图 | ✅ | 🔄 | 待实现 |
+
+### 相关文件
+- `packages/vue-pptx/src/types.ts` - 表格和图表类型定义
+- `packages/vue-pptx/src/parser/slide.ts` - 表格解析逻辑
+- `packages/vue-pptx/src/renderer/index.ts` - 表格渲染集成
+- `packages/vue-pptx/src/renderer/charts.ts` - 图表渲染工具（新增）
+
+---
+
 *最后更新: 2026年2月2日*
