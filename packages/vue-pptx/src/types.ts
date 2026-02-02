@@ -124,6 +124,100 @@ export interface PPTXShapeElement extends PPTXElement {
 }
 
 /**
+ * 表格单元格样式
+ */
+export interface PPTXCellStyle {
+  backgroundColor?: string
+  color?: string
+  fontSize?: number
+  fontFamily?: string
+  bold?: boolean
+  italic?: boolean
+  align?: 'left' | 'center' | 'right'
+  verticalAlign?: 'top' | 'middle' | 'bottom'
+  border?: {
+    top?: string
+    right?: string
+    bottom?: string
+    left?: string
+  }
+}
+
+/**
+ * 表格单元格
+ */
+export interface PPTXCell {
+  text?: string
+  fragments?: PPTXTextFragment[]
+  style?: PPTXCellStyle
+  rowSpan?: number
+  colSpan?: number
+}
+
+/**
+ * 表格行
+ */
+export interface PPTXRow {
+  cells: PPTXCell[]
+  height?: number
+  style?: PPTXCellStyle
+}
+
+/**
+ * 表格样式（类似pptx-preview的tableStyles）
+ */
+export interface PPTXTableStyle {
+  wholeTbl?: PPTXCellStyle
+  band1H?: PPTXCellStyle // 横向奇数行
+  band2H?: PPTXCellStyle // 横向偶数行
+  band1V?: PPTXCellStyle // 纵向奇数列
+  band2V?: PPTXCellStyle // 纵向偶数列
+  firstCol?: PPTXCellStyle // 第一列
+  lastCol?: PPTXCellStyle // 最后一列
+  firstRow?: PPTXCellStyle // 第一行
+  lastRow?: PPTXCellStyle // 最后一行
+}
+
+/**
+ * 表格元素
+ */
+export interface PPTXTableElement extends PPTXElement {
+  type: 'table'
+  rows: PPTXRow[]
+  tableStyle?: PPTXTableStyle
+  columns?: number[]
+}
+
+/**
+ * 图表数据点
+ */
+export interface PPTXChartPoint {
+  value: number
+  label?: string
+  color?: string
+}
+
+/**
+ * 图表系列
+ */
+export interface PPTXChartSeries {
+  name?: string
+  points: PPTXChartPoint[]
+  color?: string
+}
+
+/**
+ * 图表元素
+ */
+export interface PPTXChartElement extends PPTXElement {
+  type: 'chart'
+  chartType: 'column' | 'bar' | 'line' | 'pie' | 'doughnut' | 'area' | 'scatter'
+  title?: string
+  series: PPTXChartSeries[]
+  showLegend?: boolean
+}
+
+/**
  * PPTX幻灯片
  */
 export interface PPTXSlide {

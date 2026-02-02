@@ -4,9 +4,12 @@ import type {
   PPTXTextElement,
   PPTXImageElement,
   PPTXShapeElement,
-  PPTXVideoElement
+  PPTXVideoElement,
+  PPTXTableElement,
+  PPTXChartElement
 } from '../types';
 import { createShapeElement } from './shapes';
+import { renderChart } from './charts';
 
 /**
  * PPTX渲染器
@@ -63,6 +66,10 @@ export class PPTXRenderer {
         return this.renderShapeElement(element as PPTXShapeElement);
       case 'video':
         return this.renderVideoElement(element as PPTXVideoElement);
+      case 'table':
+        return this.renderTableElement(element as PPTXTableElement);
+      case 'chart':
+        return this.renderChartElement(element as PPTXChartElement);
       default:
         return null;
     }
@@ -354,5 +361,205 @@ export class PPTXRenderer {
     videoContainer.appendChild(videoEl);
 
     return videoContainer;
+  }
+
+  /**
+   * 渲染表格元素
+   */
+  private renderTableElement(element: PPTXTableElement): HTMLElement {
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'pptx-table-container';
+    tableContainer.style.position = 'absolute';
+    tableContainer.style.left = `${element.x}px`;
+    tableContainer.style.top = `${element.y}px`;
+    tableContainer.style.width = `${element.width}px`;
+    tableContainer.style.height = `${element.height}px`;
+    tableContainer.style.overflow = 'auto';
+
+    const table = document.createElement('table');
+    table.className = 'pptx-table';
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.backgroundColor = '#fff';
+
+    // 解析表格样式（斑马纹等）
+    const tableStyle = element.tableStyle || {};
+
+    element.rows.forEach((row, rowIndex) => {
+      const tr = document.createElement('tr');
+
+      // 应用行高
+      if (row.height) {
+        tr.style.height = `${row.height}px`;
+      }
+
+      // 应用行样式（斑马纹）
+      const isBand1 = rowIndex % 2 === 0;
+      const isBand2 = rowIndex % 2 === 1;
+
+      if (isBand1 && tableStyle.band1H) {
+        this.applyCellStyle(tr, tableStyle.band1H);
+      } else if (isBand2 && tableStyle.band2H) {
+        this.applyCellStyle(tr, tableStyle.band2H);
+      }
+
+      // 首行样式
+      if (rowIndex === 0 && tableStyle.firstRow) {
+        this.applyCellStyle(tr, tableStyle.firstRow);
+      }
+
+      // 末行样式
+      if (rowIndex === element.rows.length - 1 && tableStyle.lastRow) {
+        this.applyCellStyle(tr, tableStyle.lastRow);
+      }
+
+      row.cells.forEach((cell, cellIndex) => {
+        const td = document.createElement('td');
+
+        // 合并单元格
+        if (cell.rowSpan) {
+          td.rowSpan = cell.rowSpan;
+        }
+        if (cell.colSpan) {
+          td.colSpan = cell.colSpan;
+        }
+
+        // 应用单元格样式
+        if (cell.style) {
+          this.applyCellStyle(td, cell.style);
+        }
+
+        // 应用列样式（首列、末列、斑马纹）
+        if (cellIndex === 0 && tableStyle.firstCol) {
+          this.applyCellStyle(td, tableStyle.firstCol);
+        } else if (cellIndex === row.cells.length - 1 && tableStyle.lastCol) {
+          this.applyCellStyle(td, tableStyle.lastCol);
+        } else if (cellIndex % 2 === 0 && tableStyle.band1V) {
+          this.applyCellStyle(td, tableStyle.band1V);
+        } else if (cellIndex % 2 === 1 && tableStyle.band2V) {
+          this.applyCellStyle(td, tableStyle.band2V);
+        }
+
+        // 单元格内容
+        if (cell.fragments && cell.fragments.length > 0) {
+          // 使用片段渲染
+          const fragmentContainer = document.createElement('span');
+          cell.fragments.forEach((fragment) => {
+            const span = document.createElement('span');
+            span.textContent = fragment.text;
+            if (fragment.color) {
+              span.style.color = fragment.color;
+            }
+            if (fragment.backgroundColor) {
+              span.style.backgroundColor = fragment.backgroundColor;
+              span.style.padding = '0 2px';
+            }
+            fragmentContainer.appendChild(span);
+          });
+          td.appendChild(fragmentContainer);
+        } else if (cell.text) {
+          td.textContent = cell.text;
+        }
+
+        // 默认单元格样式
+        td.style.padding = '4px 8px';
+        td.style.border = '1px solid #ddd';
+        td.style.textAlign = 'left';
+        td.style.verticalAlign = 'middle';
+
+        tr.appendChild(td);
+      });
+
+      table.appendChild(tr);
+    });
+
+    tableContainer.appendChild(table);
+    return tableContainer;
+  }
+
+  /**
+   * 应用单元格样式
+   */
+  private applyCellStyle(element: HTMLElement, style: any): void {
+    if (!style) return;
+
+    if (style.backgroundColor) {
+      element.style.backgroundColor = style.backgroundColor;
+    }
+    if (style.color) {
+      element.style.color = style.color;
+    }
+    if (style.fontSize) {
+      element.style.fontSize = `${style.fontSize}px`;
+    }
+    if (style.fontFamily) {
+      element.style.fontFamily = style.fontFamily;
+    }
+    if (style.bold) {
+      element.style.fontWeight = 'bold';
+    }
+    if (style.italic) {
+      element.style.fontStyle = 'italic';
+    }
+    if (style.align) {
+      element.style.textAlign = style.align;
+    }
+    if (style.verticalAlign) {
+      element.style.verticalAlign = style.verticalAlign;
+    }
+    if (style.border) {
+      if (style.border.top) {
+        element.style.borderTop = `1px solid ${style.border.top}`;
+      }
+      if (style.border.right) {
+        element.style.borderRight = `1px solid ${style.border.right}`;
+      }
+      if (style.border.bottom) {
+        element.style.borderBottom = `1px solid ${style.border.bottom}`;
+      }
+      if (style.border.left) {
+        element.style.borderLeft = `1px solid ${style.border.left}`;
+      }
+    }
+  }
+
+  /**
+   * 渲染图表元素
+   */
+  private renderChartElement(element: PPTXChartElement): HTMLElement | null {
+    const svgElement = renderChart(element);
+
+    if (!svgElement) {
+      // 不支持的图表类型，显示占位符
+      const placeholder = document.createElement('div');
+      placeholder.className = 'pptx-chart-placeholder';
+      placeholder.style.position = 'absolute';
+      placeholder.style.left = `${element.x}px`;
+      placeholder.style.top = `${element.y}px`;
+      placeholder.style.width = `${element.width}px`;
+      placeholder.style.height = `${element.height}px`;
+      placeholder.style.display = 'flex';
+      placeholder.style.alignItems = 'center';
+      placeholder.style.justifyContent = 'center';
+      placeholder.style.backgroundColor = '#f0f0f0';
+      placeholder.style.border = '1px dashed #ccc';
+      placeholder.style.color = '#666';
+      placeholder.style.fontSize = '14px';
+      placeholder.textContent = `图表类型: ${element.chartType}`;
+
+      return placeholder;
+    }
+
+    // 包装SVG在容器中
+    const container = document.createElement('div');
+    container.className = 'pptx-chart';
+    container.style.position = 'absolute';
+    container.style.left = `${element.x}px`;
+    container.style.top = `${element.y}px`;
+    container.style.width = `${element.width}px`;
+    container.style.height = `${element.height}px`;
+    container.appendChild(svgElement);
+
+    return container;
   }
 }

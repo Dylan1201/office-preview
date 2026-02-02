@@ -1,4 +1,10 @@
-import type { PPTXSlide, PPTXElement, PPTXTextElement, PPTXVideoElement } from '../types'
+import type {
+  PPTXSlide,
+  PPTXElement,
+  PPTXTextElement,
+  PPTXVideoElement,
+  PPTXTableElement
+} from '../types'
 import { getElementText, parseColor, getUnitValue } from './element'
 
 /**
@@ -102,6 +108,30 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
   for (let i = 0; i < grpSps.length; i++) {
     const groupElements = parseGroupShape(grpSps[i], theme)
     elements.push(...groupElements)
+  }
+
+  // 尝试查找表格元素 (graphicFrame)
+  let graphicFrames = spTree.getElementsByTagName('p:graphicFrame')
+  if (graphicFrames.length === 0) {
+    graphicFrames = spTree.getElementsByTagName('graphicFrame')
+  }
+  if (graphicFrames.length === 0) {
+    // 使用 localName 查找
+    const allChildren = spTree.getElementsByTagName('*')
+    const gfList: Element[] = []
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'graphicFrame') {
+        gfList.push(allChildren[i])
+      }
+    }
+    graphicFrames = gfList as any
+  }
+
+  for (let i = 0; i < graphicFrames.length; i++) {
+    const tableElement = parseTable(graphicFrames[i], theme)
+    if (tableElement) {
+      elements.push(tableElement)
+    }
   }
 
   return {
@@ -898,3 +928,242 @@ function parseStroke(spPr: Element, theme: any): string | undefined {
 
   return parseColor(solidFill, theme)
 }
+
+/**
+ * 解析表格元素
+ */
+export function parseTable(graphicFrame: Element, theme: any): PPTXElement | null {
+  try {
+    // 查找表格数据
+    let tbl = graphicFrame.getElementsByTagName('a:tbl')[0] || graphicFrame.getElementsByTagName('tbl')[0]
+
+    if (!tbl) {
+      // 使用 localName 查找
+      const allChildren = graphicFrame.getElementsByTagName('*')
+      for (let i = 0; i < allChildren.length; i++) {
+        if (allChildren[i].localName === 'tbl') {
+          tbl = allChildren[i]
+          break
+        }
+      }
+    }
+
+    if (!tbl) return null
+
+    // 获取位置和尺寸
+    let xfrm = graphicFrame.getElementsByTagName('a:xfrm')[0] || graphicFrame.getElementsByTagName('p:xfrm')[0] || graphicFrame.getElementsByTagName('xfrm')[0]
+    let off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
+    let ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
+
+    const x = off ? parseInt(off.getAttribute('x') || '0') : 0
+    const y = off ? parseInt(off.getAttribute('y') || '0') : 0
+    const width = ext ? parseInt(ext.getAttribute('cx') || '0') : 0
+    const height = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
+
+    // 转换单位 EMU -> pixel (1 inch = 914400 EMU, 96 DPI)
+    const emuToPx = (emu: number) => Math.round(emu / 914400 * 96)
+
+    // 解析表格行
+    const rows: any[] = []
+    let trs = tbl.getElementsByTagName('a:tr')
+
+    if (trs.length === 0) {
+      // 使用 localName 查找
+      const allChildren = tbl.getElementsByTagName('*')
+      const trList: Element[] = []
+      for (let i = 0; i < allChildren.length; i++) {
+        if (allChildren[i].localName === 'tr') {
+          trList.push(allChildren[i])
+        }
+      }
+      trs = trList as any
+    }
+
+    for (let i = 0; i < trs.length; i++) {
+      const tr = trs[i]
+      const heightAttr = tr.getAttribute('h')
+      const rowHeight = heightAttr ? parseInt(heightAttr) : undefined
+
+      const cells: any[] = []
+      let tcs = tr.getElementsByTagName('a:tc')
+
+      if (tcs.length === 0) {
+        // 使用 localName 查找
+        const allChildren = tr.getElementsByTagName('*')
+        const tcList: Element[] = []
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'tc') {
+            tcList.push(allChildren[j])
+          }
+        }
+        tcs = tcList as any
+      }
+
+      for (let j = 0; j < tcs.length; j++) {
+        const tc = tcs[j]
+
+        // 获取单元格内容
+        const cellBody = tc.getElementsByTagName('a:txBody')[0] || tc.getElementsByTagName('txBody')[0]
+
+        let text = ''
+        let fragments: any[] | undefined
+
+        if (cellBody) {
+          // 获取文本
+          text = getElementText(cellBody)
+
+          // 尝试获取文本片段（支持颜色）
+          const p = cellBody.getElementsByTagName('a:p')[0] || cellBody.getElementsByTagName('p')[0]
+          if (p) {
+            fragments = parseTextFragments(p, theme)
+          }
+        }
+
+        // 获取合并单元格信息
+        const rowSpanAttr = tc.getAttribute('rowSpan')
+        const colSpanAttr = tc.getAttribute('gridSpan')
+        const rowSpan = rowSpanAttr ? parseInt(rowSpanAttr) : undefined
+        const colSpan = colSpanAttr ? parseInt(colSpanAttr) : undefined
+
+        // 解析单元格样式
+        const cellStyle = parseCellStyle(tc, theme)
+
+        cells.push({
+          text,
+          fragments,
+          rowSpan,
+          colSpan,
+          style: cellStyle
+        })
+      }
+
+      rows.push({
+        cells,
+        height: rowHeight ? emuToPx(rowHeight) : undefined
+      })
+    }
+
+    // 解析表格样式
+    const tableStyle = parseTableStyle(tbl, theme)
+
+    // 解析列宽
+    const gridCols = tbl.getElementsByTagName('a:gridCol')
+    const columns: number[] = []
+
+    for (let i = 0; i < gridCols.length; i++) {
+      const w = gridCols[i].getAttribute('w')
+      if (w) {
+        columns.push(emuToPx(parseInt(w)))
+      }
+    }
+
+    const tableElement: PPTXTableElement = {
+      type: 'table',
+      id: `table-${Date.now()}-${Math.random()}`,
+      x: emuToPx(x),
+      y: emuToPx(y),
+      width: emuToPx(width),
+      height: emuToPx(height),
+      rows,
+      tableStyle,
+      columns: columns.length > 0 ? columns : undefined,
+      zIndex: 0
+    }
+    return tableElement
+  } catch (e) {
+    console.warn('[PPTX] Failed to parse table:', e)
+    return null
+  }
+}
+
+/**
+ * 解析单元格样式
+ */
+function parseCellStyle(tc: Element, theme: any): any {
+  const style: any = {}
+
+  // 查找单元格属性
+  let tcPr = tc.getElementsByTagName('a:tcPr')[0] || tc.getElementsByTagName('tcPr')[0]
+
+  if (!tcPr) {
+    // 使用 localName 查找
+    const allChildren = tc.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'tcPr') {
+        tcPr = allChildren[i]
+        break
+      }
+    }
+  }
+
+  if (!tcPr) return style
+
+  // 解析填充色
+  let solidFill = tcPr.getElementsByTagName('a:solidFill')[0] || tcPr.getElementsByTagName('solidFill')[0]
+  if (solidFill) {
+    const color = parseColor(solidFill, theme)
+    if (color) style.backgroundColor = color
+  }
+
+  // 解析边框
+  const borders = ['top', 'left', 'bottom', 'right']
+  const borderMap: Record<string, string> = { top: 'top', left: 'left', bottom: 'bottom', right: 'right' }
+
+  borders.forEach((border) => {
+    const ln = tcPr.getElementsByTagName(`a:${border}`)[0]
+    if (ln) {
+      const borderFill = ln.getElementsByTagName('a:solidFill')[0] || ln.getElementsByTagName('solidFill')[0]
+      if (borderFill) {
+        const color = parseColor(borderFill, theme)
+        if (color) {
+          if (!style.border) style.border = {}
+          style.border[borderMap[border]] = color
+        }
+      }
+    }
+  })
+
+  return style
+}
+
+/**
+ * 解析表格样式（类似pptx-preview的tableStyles）
+ */
+function parseTableStyle(tbl: Element, _theme: any): any {
+  const tableStyle: any = {}
+
+  // 查找表格样式
+  let tblPr = tbl.getElementsByTagName('a:tblPr')[0] || tbl.getElementsByTagName('tblPr')[0]
+
+  if (!tblPr) {
+    // 使用 localName 查找
+    const allChildren = tbl.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'tblPr') {
+        tblPr = allChildren[i]
+        break
+      }
+    }
+  }
+
+  if (!tblPr) return tableStyle
+
+  // 解析表格样式ID
+  const styleId = tblPr.getAttribute('styleId')
+
+  if (!styleId) return tableStyle
+
+  // 这里可以根据styleId映射到预定义的样式
+  // 例如: {5C22544A-7EE6-4342-B048-85BDC9FD1C3A} 可能对应某种样式
+
+  // 简单实现：使用band1H和band2H实现斑马纹
+  // 检测是否有bandRow属性
+  const bandRow = tblPr.getAttribute('bandRow')
+  if (bandRow === '1') {
+    tableStyle.band1H = { backgroundColor: '#f2f2f2' }
+    tableStyle.band2H = { backgroundColor: '#ffffff' }
+  }
+
+  return tableStyle
+}
+
