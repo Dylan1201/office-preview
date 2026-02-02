@@ -19,7 +19,8 @@
       "Bash(timeout:*)",
       "Bash(curl:*)",
       "Bash(npx tsc:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "mcp__web-reader__webReader"
     ]
   }
 }

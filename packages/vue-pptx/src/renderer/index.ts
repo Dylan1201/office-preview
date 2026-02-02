@@ -6,6 +6,7 @@ import type {
   PPTXShapeElement,
   PPTXVideoElement
 } from '../types';
+import { createShapeElement } from './shapes';
 
 /**
  * PPTX渲染器
@@ -205,6 +206,32 @@ export class PPTXRenderer {
    * 渲染形状元素
    */
   private renderShapeElement(element: PPTXShapeElement): HTMLElement {
+    // 尝试使用SVG渲染复杂形状
+    if (element.shapeType) {
+      const svgElement = createShapeElement(
+        element.shapeType,
+        element.width,
+        element.height,
+        element.fill,
+        element.stroke,
+        element.strokeWidth
+      );
+
+      if (svgElement) {
+        // SVG渲染成功，包装在容器中
+        const container = document.createElement('div');
+        container.className = 'pptx-shape';
+        container.style.position = 'absolute';
+        container.style.left = `${element.x}px`;
+        container.style.top = `${element.y}px`;
+        container.style.width = `${element.width}px`;
+        container.style.height = `${element.height}px`;
+        container.appendChild(svgElement);
+        return container;
+      }
+    }
+
+    // 回退到原有的CSS渲染方式（用于简单形状）
     // 预先检测是否为圆环，用于位置调整
     const isDonutCandidate =
       element.shapeType === 'ellipse' ||
