@@ -1341,4 +1341,35 @@ async function renderExcel(buffer: ArrayBuffer) {
 
 ---
 
+## 🔧 问题10: 增强PPTX形状支持
+
+### 背景
+参考pptx-preview库，其支持40+种形状，而之前我们只支持4种基础形状。
+
+### 解决方案
+
+**新增形状渲染模块** `packages/vue-pptx/src/renderer/shapes.ts`
+- 使用SVG渲染复杂形状
+- 支持三角形、菱形、五边形、六边形、五角星
+- 支持箭头、心形、圆环等特殊形状
+
+**更新渲染器** `packages/vue-pptx/src/renderer/index.ts`
+- 集成新形状渲染功能
+- SVG优先，CSS回退的渲染策略
+- 保持向后兼容性
+
+### 效果对比
+
+| 指标 | 之前 | 现在 | 提升 |
+|------|------|------|------|
+| 支持形状数量 | 4种 | 12种 | 200% |
+| 覆盖率 | 10% | 30% | 200% |
+| 渲染方式 | CSS | SVG + CSS | 质量提升 |
+
+### 相关文件
+- `packages/vue-pptx/src/renderer/shapes.ts` - 新增形状渲染工具
+- `packages/vue-pptx/src/renderer/index.ts` - 集成形状渲染
+
+---
+
 *最后更新: 2026年2月2日*
