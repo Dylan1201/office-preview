@@ -88,9 +88,10 @@ async function preview() {
  */
 function nextSlide() {
   if (!presentation.value || currentSlide.value >= presentation.value.slides.length - 1) return
-  pptxViewer?.next()
-  currentSlide.value++
-  emit('slideChange', currentSlide.value)
+  const newIndex = currentSlide.value + 1
+  pptxViewer?.goTo(newIndex)
+  currentSlide.value = newIndex
+  emit('slideChange', newIndex)
 }
 
 /**
@@ -98,9 +99,10 @@ function nextSlide() {
  */
 function prevSlide() {
   if (!presentation.value || currentSlide.value <= 0) return
-  pptxViewer?.prev()
-  currentSlide.value--
-  emit('slideChange', currentSlide.value)
+  const newIndex = currentSlide.value - 1
+  pptxViewer?.goTo(newIndex)
+  currentSlide.value = newIndex
+  emit('slideChange', newIndex)
 }
 
 onMounted(() => {
