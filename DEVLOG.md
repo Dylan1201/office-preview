@@ -1436,4 +1436,37 @@ async function renderExcel(buffer: ArrayBuffer) {
 
 ---
 
+## 🔧 问题12: PPT幻灯片切换顺序错乱
+
+### 问题描述
+点击上一页/下一页按钮时，显示的幻灯片顺序错乱，不是按正确顺序切换。
+
+### 根本原因
+PPTXViewer内部维护了`currentSlideIndex`，main.vue中又维护了`currentSlide.value`，两者的更新不同步：
+
+```typescript
+// 问题代码
+function nextSlide() {
+  pptxViewer?.next()  // 内部currentSlideIndex++，渲染slides[currentSlideIndex]
+  currentSlide.value++  // 手动递增，但此时已经不同步
+}
+```
+
+### 解决方案
+修改nextSlide和prevSlide函数，使用goTo()方法确保索引同步：
+
+```typescript
+function nextSlide() {
+  const newIndex = currentSlide.value + 1
+  pptxViewer?.goTo(newIndex)  // 跳转到指定索引
+  currentSlide.value = newIndex
+  emit('slideChange', newIndex)
+}
+```
+
+### 相关文件
+- `packages/vue-pptx/src/main.vue` - 修复幻灯片切换逻辑
+
+---
+
 *最后更新: 2026年2月2日*
