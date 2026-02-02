@@ -54,11 +54,21 @@ async function preview() {
   loading.value = true
   errorMsg.value = ''
 
+  // 清空旧内容
+  if (containerRef.value) {
+    containerRef.value.innerHTML = ''
+  }
+  presentation.value = null
+  currentSlide.value = 0
+
   try {
     const arrayBuffer = await getPptxData(props.src, props.requestOptions)
 
     if (!pptxViewer) {
-      throw new Error('PPTX Viewer not initialized')
+      pptxViewer = initPptxPreviewer(containerRef.value, {
+        width: props.options?.width,
+        height: props.options?.height
+      })
     }
 
     presentation.value = await pptxViewer.preview(arrayBuffer)

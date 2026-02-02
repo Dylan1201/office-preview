@@ -26,6 +26,9 @@ async function init() {
   const container = containerRef.value
   if (!container) return
 
+  // 清空旧内容
+  container.innerHTML = ''
+
   getData(props.src, props.requestOptions)
     .then(async res => {
       await render(res, container, props.options)

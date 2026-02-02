@@ -1,4 +1,4 @@
-import type { PptxProps, PptxEmits, PPTXPresentation } from './types'
+import type { PPTXPresentation } from './types'
 import { PPTXParser } from './parser'
 import { PPTXRenderer } from './renderer'
 
@@ -37,7 +37,7 @@ export interface PPTXViewer {
 /**
  * 初始化PPTX预览器
  */
-export function initPptxPreviewer(container: HTMLElement, options: { width?: number; height?: number } = {}): PPTXViewer {
+export function initPptxPreviewer(container: HTMLElement, _options: { width?: number; height?: number } = {}): PPTXViewer {
   const renderer = new PPTXRenderer(container)
   const parser = new PPTXParser()
 

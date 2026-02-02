@@ -201,6 +201,11 @@ async function renderExcel(buffer: ArrayBuffer) {
   loading.value = true
   error.value = ''
 
+  // 清空旧数据
+  allSheets.value = []
+  currentSheet.value = 0
+  selectedCell.value = null
+
   try {
     const workbook = await readExcelData(buffer, props.options?.xls || false)
 

@@ -25,11 +25,9 @@ export interface DocxOptions {
   /** 是否渲染批注 */
   renderFieldcodes?: boolean
   /** 是否渲染批注 */
-  ignoreLastRenderedPageBreak?: boolean
-  /** 是否渲染批注 */
   inWrapper?: boolean
-  /** 是否渲染批注 */
-  experimental?: boolean
+  /** 是否修剪XML声明 */
+  trimXmlDeclaration?: boolean
 }
 
 /**

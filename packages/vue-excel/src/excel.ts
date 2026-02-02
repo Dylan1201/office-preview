@@ -45,7 +45,11 @@ function requestExcel(src: string, options: RequestInit): Promise<ArrayBuffer> {
       reject(new Error('Network error'))
     }
 
-    xhr.send(options.body)
+    if (options.body) {
+      xhr.send(options.body as XMLHttpRequestBodyInit)
+    } else {
+      xhr.send()
+    }
   })
 }
 
@@ -84,9 +88,9 @@ function getCellText(cell: ExcelJS.Cell): string {
           if (cell.style.numFmt.endsWith('%')) {
             const precision = cell.style.numFmt.match(/\.(\d+)%/)
             if (precision) {
-              return (value * 100).toFixed(Number(precision[1])) + '%'
+              return ((value || 0) as number * 100).toFixed(parseInt(precision[1])) + '%'
             }
-            return value * 100 + '%'
+            return ((value || 0) as number * 100) + '%'
           }
 
           // 处理数字格式
@@ -98,7 +102,7 @@ function getCellText(cell: ExcelJS.Cell): string {
               prefix = '¥'
             }
 
-            if (value === 0 && cell.style.numFmt.startsWith('_')) {
+            if ((value || 0) === 0 && cell.style.numFmt.startsWith('_')) {
               return '-'
             }
 
@@ -108,7 +112,7 @@ function getCellText(cell: ExcelJS.Cell): string {
               precision = precisionMatch[1].length
             }
 
-            let result = value.toFixed(precision) + ''
+            let result = ((value || 0) as number).toFixed(precision) + ''
 
             // 处理千分位
             if (cell.style.numFmt.includes('#,##')) {
@@ -128,47 +132,47 @@ function getCellText(cell: ExcelJS.Cell): string {
             return prefix + result
           }
         }
-        return value + ''
+        return (value || 0) + ''
       } catch (e) {
-        return value + ''
+        return (value || 0) + ''
       }
 
     case ExcelJS.ValueType.String:
-      return value
+      return String(value || '')
 
     case ExcelJS.ValueType.Date:
       switch (numFmt) {
         case 'yyyy-mm-dd;@':
-          return dayjs(value).format('YYYY-MM-DD')
+          return dayjs(value as Date).format('YYYY-MM-DD')
         case 'mm-dd-yy':
-          return dayjs(value).format('YYYY/MM/DD')
+          return dayjs(value as Date).format('YYYY/MM/DD')
         case '[$-F800]dddd, mmmm dd, yyyy':
-          return dayjs(value).format('YYYY年M月D日 ddd')
+          return dayjs(value as Date).format('YYYY年M月D日 ddd')
         case 'm"月"d"日";@':
-          return dayjs(value).format('M月D日')
+          return dayjs(value as Date).format('M月D日')
         case 'yyyy/m/d h:mm;@':
         case 'm/d/yy "h":mm':
-          return dayjs(value).subtract(8, 'hour').format('YYYY/M/DD HH:mm')
+          return dayjs(value as Date).subtract(8, 'hour').format('YYYY/M/DD HH:mm')
         case 'h:mm;@':
-          return dayjs(value).format('HH:mm')
+          return dayjs(value as Date).format('HH:mm')
         default:
-          return dayjs(value).format('YYYY-MM-DD')
+          return dayjs(value as Date).format('YYYY-MM-DD')
       }
 
     case ExcelJS.ValueType.Hyperlink:
-      return value.text
+      return (value as any).text || ''
 
     case ExcelJS.ValueType.Formula:
-      return get(value, 'result.error') || value.result
+      return get(value as any, 'result.error') || (value as any).result || ''
 
     case ExcelJS.ValueType.RichText:
-      return cell.text
+      return cell.text || ''
 
     case ExcelJS.ValueType.Boolean:
       return String(value).toUpperCase()
 
     default:
-      return value
+      return String(value || '')
   }
 }
 

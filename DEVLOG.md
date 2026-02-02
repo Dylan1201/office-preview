@@ -1080,7 +1080,265 @@ private renderVideoElement(element: PPTXVideoElement): HTMLElement {
 
 ---
 
-*生成时间: 2025年1月30日*
+## 🔧 问题7: PPT圆形和圆环渲染问题修复
+
+### 问题描述
+- PPT中圆形显示为方形
+- 圆环(ring/donut)形状无法正确显示
+- 圆环和填充圆的圆心不对齐
+- 文本元素未居中对齐
+
+### 根本原因
+1. **形状类型未识别** - 未正确识别ellipse/oval形状类型
+2. **填充判断错误** - `parseFill`使用递归搜索，错误地将描边元素内的`noFill`识别为形状无填充
+3. **圆环渲染逻辑错误** - 未正确处理content-box模式下border向外扩展的特性
+4. **文本无默认对齐** - 未设置Flexbox居中
+
+### 解决方案
+
+#### 1. 添加形状类型识别
+
+```typescript
+// packages/vue-pptx/src/parser/slide.ts
+function parseShapeType(spPr: Element): string | undefined {
+  // 优先查找预设几何形状
+  let prstGeom = spPr.getElementsByTagName('a:prstGeom')[0]
+  if (prstGeom) {
+    return prstGeom.getAttribute('prst')
+  }
+
+  // 检查自定义几何形状
+  let custGeom = spPr.getElementsByTagName('a:custGeom')[0]
+  if (custGeom) {
+    return 'custom'
+  }
+}
+```
+
+#### 2. 修复填充解析逻辑
+
+**关键修改**: 只检查直接子元素，避免递归搜索描边内的noFill
+
+```typescript
+// 修改前：使用getElementsByTagName递归搜索
+function parseFill(spPr: Element): string | undefined {
+  const noFill = spPr.getElementsByTagName('a:noFill')[0]
+  if (noFill) return undefined  // ❌ 会找到描边内的noFill
+}
+
+// 修改后：只检查直接子元素
+function parseFill(spPr: Element): string | undefined {
+  const children = spPr.children
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    const localName = child.localName || child.tagName.replace(/^a:/, '')
+    if (localName === 'noFill') {
+      return undefined  // ✅ 只检查直接子元素
+    }
+  }
+}
+```
+
+#### 3. 圆形和圆环渲染
+
+```typescript
+// packages/vue-pptx/src/renderer/index.ts
+private renderShapeElement(element: PPTXShapeElement): HTMLElement {
+  // 判断是否为圆环（圆形+无填充+有描边）
+  const isDonutCandidate = element.shapeType === 'ellipse' || element.shapeType === 'oval'
+  const hasNoFill = !element.fill && !element.gradient
+  const hasStroke = !!element.stroke
+  const isDonut = isDonutCandidate && hasNoFill && hasStroke
+
+  // 应用圆形样式
+  if (element.shapeType === 'ellipse' || element.shapeType === 'oval') {
+    shapeEl.style.borderRadius = '50%'
+  }
+
+  // 圆环渲染：使用content-box，border向外扩展
+  if (isDonut) {
+    const borderWidth = element.strokeWidth || 1
+    // 减小内容尺寸以补偿border向外扩展，保持外径不变
+    const donutContentWidth = element.width - borderWidth * 2
+    const donutContentHeight = element.height - borderWidth * 2
+
+    shapeEl.style.width = `${donutContentWidth}px`
+    shapeEl.style.height = `${donutContentHeight}px`
+    shapeEl.style.border = `${borderWidth}px solid ${element.stroke}`
+    shapeEl.style.backgroundColor = 'transparent'
+  }
+}
+```
+
+#### 4. 文本居中对齐
+
+```typescript
+// packages/vue-pptx/src/renderer/index.ts
+private renderTextElement(element: PPTXTextElement): HTMLElement {
+  const textEl = document.createElement('div')
+
+  // 默认居中对齐
+  textEl.style.display = 'flex'
+  textEl.style.alignItems = 'center'
+  textEl.style.justifyContent = 'center'
+
+  // 如果有明确的对齐设置则覆盖
+  if (element.style.align) {
+    textEl.style.justifyContent = element.style.align
+  }
+  if (element.style.verticalAlign) {
+    textEl.style.alignItems = element.style.verticalAlign
+  }
+}
+```
+
+### 修复效果
+
+- ✅ **圆形正确渲染** - ellipse/oval形状应用50%圆角
+- ✅ **圆环正确识别** - 无填充+有描边的圆形识别为圆环
+- ✅ **圆心完美对齐** - 圆环和填充圆使用相同位置和尺寸，通过调整内容尺寸保持外径一致
+- ✅ **文本居中显示** - Flexbox默认居中对齐
+
+### 相关文件
+- [`packages/vue-pptx/src/parser/slide.ts`](packages/vue-pptx/src/parser/slide.ts:719-790) - 形状类型和填充解析
+- [`packages/vue-pptx/src/renderer/index.ts`](packages/vue-pptx/src/renderer/index.ts:216-314) - 形状渲染逻辑
+- [`packages/vue-pptx/src/types.ts`](packages/vue-pptx/src/types.ts:113-124) - PPTXShapeElement类型定义
+
+---
+
+*生成时间: 2025年2月2日*
 *开发者: Claude Sonnet 4.5*
-*更新时间: 2026年1月31日*
+*更新时间: 2026年2月2日*
 *更新者: Claude (glm-4.7)*
+
+---
+
+## 🔧 问题8: 代码清理和TypeScript错误修复
+
+### 问题描述
+- 代码中存在大量调试日志（console.log）
+- 存在未使用的变量和导入
+- TypeScript类型错误和警告
+- 创建的调试脚本文件未清理
+
+### 解决方案
+
+#### 1. 删除调试文件
+- ✅ 删除 `check-stroke.js` - PPT描边宽度检查脚本
+- ✅ 删除 `analyze-ppt.js` - PPT分析脚本
+
+#### 2. 清理调试日志
+删除所有文件中的 console.log 调试输出：
+- `packages/vue-pptx/src/parser/slide.ts` - 移除所有解析日志
+- `packages/vue-pptx/src/renderer/index.ts` - 移除所有渲染日志
+
+#### 3. 修复TypeScript错误
+
+**vue-pptx包：**
+- 修复 `colorName` 可能为 null 的类型错误
+- 删除未使用的函数 `_applyLumMod`
+- 修复 `hslToRgb` 中未使用的变量 `g` 和 `b`
+- 移除未使用的导入：`PPTXElement`, `PptxProps`, `PptxEmits`
+- 修复未使用的变量：`type`, `options`, `currentSlideIndex`, `index`
+- 创建 `shims-vue.d.ts` 支持 .vue 文件类型
+- 修复模块增强声明：`@vue/runtime-core` → `vue`
+
+**vue-docx包：**
+- 删除 `DocxOptions` 接口中的重复属性定义
+- 添加缺失的 `trimXmlDeclaration` 属性定义
+- 修复 `defaultOptions` 中的重复属性
+- 创建 `shims-vue.d.ts` 支持 .vue 文件类型
+- 修复模块增强声明
+
+**vue-excel包：**
+- 创建 `shims-vue.d.ts` 支持 .vue 文件类型
+- 修复模块增强声明
+- 修复 ExcelJS 相关类型兼容性问题
+
+### 修复效果
+
+- ✅ **删除2个调试脚本文件**
+- ✅ **移除所有console.log调试日志**
+- ✅ **修复所有TypeScript类型错误**
+- ✅ **移除所有未使用的变量和导入**
+- ✅ **添加Vue组件类型声明文件**
+
+### 相关文件
+- `packages/vue-pptx/src/parser/slide.ts` - 移除调试日志
+- `packages/vue-pptx/src/parser/element.ts` - 修复类型错误
+- `packages/vue-pptx/src/parser/index.ts` - 移除未使用导入
+- `packages/vue-pptx/src/pptx.ts` - 移除未使用导入
+- `packages/vue-pptx/src/renderer/index.ts` - 移除调试日志和未使用变量
+- `packages/vue-pptx/src/index.ts` - 修复模块增强声明
+- `packages/vue-pptx/src/shims-vue.d.ts` - 新增 Vue类型声明
+- `packages/vue-docx/src/types.ts` - 修复接口定义
+- `packages/vue-docx/src/docx.ts` - 修复选项定义
+- `packages/vue-docx/src/index.ts` - 修复模块增强声明
+- `packages/vue-docx/src/shims-vue.d.ts` - 新增 Vue类型声明
+- `packages/vue-excel/src/excel.ts` - 修复类型错误
+- `packages/vue-excel/src/index.ts` - 修复模块增强声明
+- `packages/vue-excel/src/shims-vue.d.ts` - 新增 Vue类型声明
+
+---
+
+## 🔧 问题9: 文件重新加载问题
+
+### 问题描述
+已加载文件后，再次点击选择文件或加载URL时，页面无反应，不显示新文件内容。
+
+### 根本原因
+三个组件（PPT、Word、Excel）在重新加载文件时未清空旧数据和DOM容器。
+
+### 解决方案
+
+**PPT组件** (`packages/vue-pptx/src/main.vue`):
+```typescript
+async function preview() {
+  loading.value = true
+  errorMsg.value = ''
+
+  // 清空旧内容
+  if (containerRef.value) {
+    containerRef.value.innerHTML = ''
+  }
+  presentation.value = null
+  currentSlide.value = 0
+  // ...
+}
+```
+
+**Word组件** (`packages/vue-docx/src/main.vue`):
+```typescript
+async function init() {
+  await nextTick()
+  const container = containerRef.value
+  if (!container) return
+
+  // 清空旧内容
+  container.innerHTML = ''
+  // ...
+}
+```
+
+**Excel组件** (`packages/vue-excel/src/main.vue`):
+```typescript
+async function renderExcel(buffer: ArrayBuffer) {
+  loading.value = true
+  error.value = ''
+
+  // 清空旧数据
+  allSheets.value = []
+  currentSheet.value = 0
+  selectedCell.value = null
+  // ...
+}
+```
+
+### 相关文件
+- `packages/vue-pptx/src/main.vue` - 清空容器和状态
+- `packages/vue-docx/src/main.vue` - 清空容器内容
+- `packages/vue-excel/src/main.vue` - 清空数据状态
+
+---
+
+*最后更新: 2026年2月2日*

@@ -61,7 +61,7 @@ export function parseColor(element: Element, theme: any): string {
   }
 
   if (schemeClr) {
-    const colorName = schemeClr.getAttribute('val')
+    const colorName = schemeClr.getAttribute('val') || ''
 
     // 检查是否有lumMod（亮度调制）
     let lumMod = schemeClr.getElementsByTagName('a:lumMod')[0]
@@ -193,50 +193,11 @@ function applyLumModOff(hexColor: string, lumMod: number, lumOff: number): strin
   return '#' + [r2, g2, b2].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('')
 }
 
-/**
- * 应用亮度调制到颜色（兼容旧函数）
- * lumMod: 0-100000 (0%-100%)
- * PowerPoint中，lumMod小于100000会使颜色变暗
- */
-function applyLumMod(hexColor: string, lumMod: number): string {
-  // 解析十六进制颜色
-  const r = parseInt(hexColor.substring(1, 3), 16)
-  const g = parseInt(hexColor.substring(3, 5), 16)
-  const b = parseInt(hexColor.substring(5, 7), 16)
-
-  // 转换为HSL
-  const max = Math.max(r, g, b) / 255
-  const min = Math.min(r, g, b) / 255
-  let h = 0, s = 0, l = (max + min) / 2
-
-  if (max !== min) {
-    const d = max - min
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-    switch (max) {
-      case r: h = ((g / 255 - b / 255) / d + (g < b ? 6 : 0)) / 6; break
-      case g: h = ((b / 255 - r / 255) / d + 2) / 6; break
-      case b: h = ((r / 255 - g / 255) / d + 4) / 6; break
-    }
-  }
-
-  // 应用lumMod到亮度
-  // lumMod < 100000: 颜色变暗
-  // lumMod > 100000: 颜色变亮
-  const lumModPercent = lumMod / 100000
-  l = l * lumModPercent
-
-  // 转回RGB
-  const r2 = hslToRgb(h, s, l)
-  const g2 = hslToRgb(h + 1/3, s, l)
-  const b2 = hslToRgb(h + 2/3, s, l)
-
-  return '#' + [r2, g2, b2].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('')
-}
 
 function hslToRgb(h: number, s: number, l: number): number {
-  let r, g, b
+  let r
   if (s === 0) {
-    r = g = b = l
+    r = l
   } else {
     const hue2rgb = (p: number, q: number, t: number) => {
       if (t < 0) t += 1
@@ -248,8 +209,6 @@ function hslToRgb(h: number, s: number, l: number): number {
     }
     const q = l < 0.5 ? l * (1 + s) : l + s - l * s
     r = hue2rgb(q, 1 - s, h + 1/3)
-    g = hue2rgb(q, 1 - s, h)
-    b = hue2rgb(q, 1 - s, h + 2/3)
   }
   return r
 }

@@ -138,24 +138,18 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
 
 const defaultOptions: DocxOptions = {
   inWrapper: true,
-  ignoreWidth: false,
-  ignoreHeight: false,
   ignoreFonts: false,
-  breakPages: true,
-  debug: false,
   experimental: false,
+  useBase64URL: false,
+  renderChanges: false,
+  ignoreStyles: false,
+  ignoreHeaders: false,
+  ignoreFooters: false,
+  renderEndnotes: false,
+  renderNotes: false,
+  renderFieldcodes: false,
   trimXmlDeclaration: true,
   ignoreLastRenderedPageBreak: false,
-  useBase64URL: false,
-  className: 'docx-preview',
-  renderHeaders: false,
-  renderFooters: false,
-  renderFootnotes: false,
-  renderEndnotes: false,
-  renderChanges: false,
-  renderComments: false,
-  renderAltChunks: false,
-  hideWrapperOnPrint: false
 }
 
 /**

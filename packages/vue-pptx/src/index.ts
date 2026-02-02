@@ -14,7 +14,7 @@ export default {
   VueOfficePptx
 }
 
-declare module '@vue/runtime-core' {
+declare module 'vue' {
   export interface GlobalComponents {
     VueOfficePptx: typeof VueOfficePptx
   }

@@ -1,4 +1,4 @@
-import type { PPTXSlide, PPTXElement, PPTXVideoElement } from '../types'
+import type { PPTXSlide, PPTXElement, PPTXTextElement, PPTXVideoElement } from '../types'
 import { getElementText, parseColor, getUnitValue } from './element'
 
 /**
@@ -40,9 +40,9 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
   }
 
   // 尝试多种方式查找 shapes
-  let shapes = spTree.getElementsByTagName('p:sp')
+  let shapes: Element[] = Array.from(spTree.getElementsByTagName('p:sp'))
   if (shapes.length === 0) {
-    shapes = spTree.getElementsByTagName('sp')
+    shapes = Array.from(spTree.getElementsByTagName('sp'))
   }
   if (shapes.length === 0) {
     // 使用 localName 查找
@@ -63,9 +63,9 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
   }
 
   // 尝试多种方式查找 pictures
-  let pics = spTree.getElementsByTagName('p:pic')
+  let pics: Element[] = Array.from(spTree.getElementsByTagName('p:pic'))
   if (pics.length === 0) {
-    pics = spTree.getElementsByTagName('pic')
+    pics = Array.from(spTree.getElementsByTagName('pic'))
   }
   if (pics.length === 0) {
     // 使用 localName 查找
@@ -133,7 +133,9 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     }
   }
 
-  if (!spPr) return null
+  if (!spPr) {
+    return null
+  }
 
   // 获取位置和尺寸
   let xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0] || spPr.getElementsByTagName('xfrm')[0]
@@ -174,14 +176,31 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
         text,
         fragments,
         style
-      }
+      } as PPTXTextElement
     }
   }
+
+  // 解析形状类型（如圆形、椭圆等）
+  const shapeType = parseShapeType(spPr)
 
   // 创建形状元素（包括空文本框）
   const fill = parseFill(spPr, theme)
   const gradient = parseGradient(spPr, theme)
   const stroke = parseStroke(spPr, theme)
+
+  // 解析描边宽度
+  let strokeWidth = 0
+  if (stroke) {
+    const ln = spPr.getElementsByTagName('a:ln')[0] || spPr.getElementsByTagName('ln')[0]
+    if (ln) {
+      const w = ln.getAttribute('w')
+      if (w) {
+        // PPT中的描边宽度单位是 EMU (English Metric Units), 1 inch = 914400 EMU
+        // 转换为像素
+        strokeWidth = parseInt(w) / 9525
+      }
+    }
+  }
 
   const element = {
     type: 'shape',
@@ -190,10 +209,11 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     y: getUnitValue(y),
     width: getUnitValue(cx),
     height: getUnitValue(cy),
+    shapeType,
     fill,
     gradient,
     stroke,
-    strokeWidth: stroke ? 1 : 0
+    strokeWidth: strokeWidth || 1
   } as any
 
   // 过滤掉无效的形状（尺寸为0）
@@ -207,7 +227,7 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
 /**
  * 解析图片
  */
-function parsePicture(pic: Element, theme: any): PPTXElement | null {
+function parsePicture(pic: Element, _theme: any): PPTXElement | null {
   let nvPicPr = pic.getElementsByTagName('p:nvPicPr')[0] || pic.getElementsByTagName('nvPicPr')[0]
   // blipFill 可能使用 p: 命名空间
   let blipFill = pic.getElementsByTagName('p:blipFill')[0] || pic.getElementsByTagName('a:blipFill')[0] || pic.getElementsByTagName('blipFill')[0]
@@ -315,7 +335,7 @@ function isVideoElement(pic: Element): boolean {
 /**
  * 解析视频元素
  */
-function parseVideoElement(pic: Element, theme: any): PPTXElement | null {
+function parseVideoElement(pic: Element, _theme: any): PPTXElement | null {
   let nvPicPr = pic.getElementsByTagName('p:nvPicPr')[0] || pic.getElementsByTagName('nvPicPr')[0]
   let blipFill = pic.getElementsByTagName('p:blipFill')[0] || pic.getElementsByTagName('a:blipFill')[0] || pic.getElementsByTagName('blipFill')[0]
   let spPr = pic.getElementsByTagName('p:spPr')[0] || pic.getElementsByTagName('spPr')[0]
@@ -357,7 +377,7 @@ function parseVideoElement(pic: Element, theme: any): PPTXElement | null {
 
   if (videoFile) {
     videoRelId = videoFile.getAttribute('r:link') ||
-                 videoFile.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'link')
+                 videoFile.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'link') || undefined
 
     if (!videoRelId) {
       for (let i = 0; i < videoFile.attributes.length; i++) {
@@ -376,7 +396,7 @@ function parseVideoElement(pic: Element, theme: any): PPTXElement | null {
     let blip = blipFill.getElementsByTagName('a:blip')[0] || blipFill.getElementsByTagName('blip')[0]
     if (blip) {
       posterRelId = blip.getAttribute('r:embed') ||
-                   blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed')
+                   blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed') || undefined
 
       if (!posterRelId) {
         for (let i = 0; i < blip.attributes.length; i++) {
@@ -449,13 +469,13 @@ function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
 /**
  * 解析文本片段（支持每个片段不同颜色）
  */
-function parseTextFragments(p: Element, theme: any): Array<{ text: string; color?: string }> {
-  const fragments: Array<{ text: string; color?: string }> = []
+function parseTextFragments(p: Element, theme: any): Array<{ text: string; color?: string; backgroundColor?: string }> {
+  const fragments: Array<{ text: string; color?: string; backgroundColor?: string }> = []
 
   // 获取所有run
-  let runs = p.getElementsByTagName('a:r')
+  let runs: Element[] = Array.from(p.getElementsByTagName('a:r'))
   if (runs.length === 0) {
-    runs = p.getElementsByTagName('r')
+    runs = Array.from(p.getElementsByTagName('r'))
   }
   if (runs.length === 0) {
     // 使用localName查找
@@ -714,13 +734,78 @@ function parseTextStyle(txBody: Element, theme: any): any {
 }
 
 /**
+ * 解析形状类型（如圆形、椭圆等）
+ */
+function parseShapeType(spPr: Element): string | undefined {
+  // 优先查找预设几何形状
+  let prstGeom = spPr.getElementsByTagName('a:prstGeom')[0] || spPr.getElementsByTagName('prstGeom')[0]
+
+  if (!prstGeom) {
+    // 使用 localName 查找
+    const allChildren = spPr.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'prstGeom') {
+        prstGeom = allChildren[i]
+        break
+      }
+    }
+  }
+
+  if (prstGeom) {
+    const shapeType = prstGeom.getAttribute('prst')
+    if (shapeType) {
+      return shapeType
+    }
+  }
+
+  // 检查是否有自定义几何形状
+  let custGeom = spPr.getElementsByTagName('a:custGeom')[0] || spPr.getElementsByTagName('custGeom')[0]
+
+  if (!custGeom) {
+    // 使用 localName 查找
+    const allChildren = spPr.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'custGeom') {
+        custGeom = allChildren[i]
+        break
+      }
+    }
+  }
+
+  if (custGeom) {
+    // 自定义几何形状，可能是圆环等复杂形状
+    return 'custom'
+  }
+
+  return undefined
+}
+
+/**
  * 解析填充
  */
 function parseFill(spPr: Element, theme: any): string | undefined {
-  let solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
-  if (!solidFill) return undefined
+  // 只检查直接子元素中是否有 noFill（无填充）
+  // 使用 children 而不是 getElementsByTagName，避免递归搜索到描边元素内的 noFill
+  const children = spPr.children
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    const localName = child.localName || child.tagName.replace(/^a:/, '').replace(/^p:/, '')
+    if (localName === 'noFill') {
+      return undefined
+    }
+  }
 
-  return parseColor(solidFill, theme)
+  // 尝试解析 solidFill
+  let solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
+  if (solidFill) {
+    const color = parseColor(solidFill, theme)
+    if (color) {
+      return color
+    }
+  }
+
+  // 如果没有直接的填充定义，返回 undefined（可能是圆环或者真的无填充）
+  return undefined
 }
 
 /**

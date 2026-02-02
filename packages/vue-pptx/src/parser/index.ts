@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import type { PPTXPresentation, PPTXSlide, PPTXElement } from '../types'
+import type { PPTXPresentation, PPTXSlide } from '../types'
 import { parseSlideXML } from './slide'
 import { parseThemeXML } from './theme'
 import { getElementText, parseColor, getUnitValue } from './element'
@@ -104,7 +104,6 @@ export class PPTXParser {
       const rel = relationships[i]
       const id = rel.getAttribute('Id')
       const target = rel.getAttribute('Target')
-      const type = rel.getAttribute('Type')
       if (id && target) {
         mediaMap.set(id, target)
       }
