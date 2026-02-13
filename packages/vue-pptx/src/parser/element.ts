@@ -41,8 +41,28 @@ export function parseColor(element: Element, theme: any): string {
                 element.getElementsByTagName('p:srgbClr')[0] ||
                 element.getElementsByTagName('srgbClr')[0]
   if (srgbClr) {
-    const color = '#' + srgbClr.getAttribute('val')
-    return color
+    const val = srgbClr.getAttribute('val')
+    if (!val) {
+      return '#000000'
+    }
+    
+    // 检查 alpha 通道
+    const alphaElem = srgbClr.getElementsByTagName('a:alpha')[0] ||
+                      srgbClr.getElementsByTagName('alpha')[0]
+    
+    if (alphaElem) {
+      const alphaVal = parseInt(alphaElem.getAttribute('val') || '100000')
+      const alpha = alphaVal / 100000
+      if (alpha < 0.95) {
+        // 转换为 rgba
+        const r = parseInt(val.substring(0, 2), 16)
+        const g = parseInt(val.substring(2, 4), 16)
+        const b = parseInt(val.substring(4, 6), 16)
+        return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`
+      }
+    }
+    
+    return '#' + val
   }
 
   let schemeClr = element.getElementsByTagName('a:schemeClr')[0] ||

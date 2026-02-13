@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+packages/**/lib
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test-*.js
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+docker-daemon.json
+
+# Documentation
+*.md
+!README.md
+
+# Config files that are not needed
+.eslintrc.*
+.prettierrc
+.husky
+verdaccio-config.yaml

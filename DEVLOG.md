@@ -1470,3 +1470,254 @@ function nextSlide() {
 ---
 
 *最后更新: 2026年2月2日*
+
+---
+
+## 🔧 问题13: PPT预览内容丢失问题修复
+
+### 问题描述
+PPT预览时部分内容丢失，特别是：
+1. 标题和副标题等占位符内容不显示
+2. 文本颜色和格式不正确
+3. 部分元素位置错误
+
+### 根本原因
+
+#### 问题1: 占位符位置信息缺失
+PPT中的占位符形状（如标题、副标题）在幻灯片XML中**没有位置信息**，位置定义在布局文件中：
+
+```xml
+<!-- 幻灯片 slide1.xml -->
+<p:sp>
+  <p:nvSpPr>
+    <p:nvPr>
+      <p:ph type="ctrTitle"/>  <!-- 占位符类型 -->
+    </p:nvPr>
+  </p:nvSpPr>
+  <p:spPr>
+    <!-- 无位置信息！需要从布局继承 -->
+  </p:spPr>
+  <p:txBody>
+    <a:p>测试工程师述职报告</a:p>
+  </p:txBody>
+</p:sp>
+
+<!-- 布局 slideLayout1.xml -->
+<p:sp>
+  <p:nvSpPr>
+    <p:nvPr>
+      <p:ph type="title"/>  <!-- 布局中的占位符定义 -->
+    </p:nvPr>
+  </p:nvSpPr>
+  <p:spPr>
+    <a:xfrm>
+      <a:off x="1565731" y="2608326"/>  <!-- 有位置信息 -->
+      <a:ext cx="6048672" cy="803508"/>
+    </a:xfrm>
+  </p:spPr>
+</p:sp>
+```
+
+#### 问题2: 文本颜色在段落级别定义
+文本的颜色、字体、大小等样式定义在段落级别的默认文本属性（`pPr/defRPr`）中，而不是在文本运行级别（`rPr`）：
+
+```xml
+<a:p>
+  <a:pPr>
+    <a:defRPr sz="5400" b="1">  <!-- 默认文本属性 -->
+      <a:solidFill>
+        <a:srgbClr val="0366D6"/>  <!-- 颜色定义 -->
+      </a:solidFill>
+    </a:defRPr>
+  </a:pPr>
+  <a:r>
+    <a:t>测试工程师述职报告</a:t>  <!-- 文本运行无样式 -->
+  </a:r>
+</a:p>
+```
+
+### 解决方案
+
+#### 1. 占位符位置继承
+
+**修改 slide.ts - 解析占位符信息**
+```typescript
+function parseShape(sp: Element, theme: any): PPTXElement | null {
+  // 检查是否是占位符
+  let phType = ''
+  let phIdx = ''
+  
+  if (nvSpPr) {
+    const nvPr = nvSpPr.getElementsByTagName('p:nvPr')[0]
+    if (nvPr) {
+      const ph = nvPr.getElementsByTagName('p:ph')[0]
+      if (ph) {
+        phType = ph.getAttribute('type') || 'body'
+        phIdx = ph.getAttribute('idx') || ''
+      }
+    }
+  }
+  
+  // 占位符即使位置为 (0, 0) 也返回，不跳过
+  if (phType) {
+    return {
+      type: 'text',
+      id,
+      x: getUnitValue(x),  // 可能是 0
+      y: getUnitValue(y),  // 可能是 0
+      phType,  // 添加占位符信息
+      phIdx,
+      // ...
+    }
+  }
+}
+```
+
+**修改 index.ts - 创建占位符映射并继承位置**
+```typescript
+// 创建占位符映射（用于幻灯片占位符的位置继承）
+const placeholderMap = new Map<string, any>()
+layoutElements.forEach((el: any) => {
+  if (el.phType) {
+    const key = el.phIdx ? `${el.phType}-${el.phIdx}` : el.phType
+    placeholderMap.set(key, el)
+  }
+})
+
+// 处理幻灯片中的占位符，从布局继承位置
+slide.elements.forEach((el: any) => {
+  if (el.phType && (el.x === 0 && el.y === 0)) {
+    const key = el.phIdx ? `${el.phType}-${el.phIdx}` : el.phType
+    const layoutPh = placeholderMap.get(key)
+    
+    if (layoutPh) {
+      el.x = layoutPh.x
+      el.y = layoutPh.y
+      el.width = layoutPh.width
+      el.height = layoutPh.height
+      // 继承形状类型和填充
+    } else {
+      // 尝试匹配相近类型的占位符
+      // ctrTitle -> title, subTitle -> subTitle
+      if (el.phType === 'ctrTitle') {
+        const matchedPh = placeholderMap.get('title')
+        if (matchedPh) {
+          el.x = matchedPh.x
+          el.y = matchedPh.y
+          // ...
+        }
+      }
+    }
+  }
+})
+```
+
+#### 2. 段落级别样式解析
+
+**修改 slide.ts - parseTextFragments 函数**
+```typescript
+function parseTextFragments(p: Element, theme: any): Array<{ text: string; color?: string }> {
+  // 1. 首先获取段落级别的默认文本属性
+  let defaultColor: string | undefined
+  
+  const pPr = p.getElementsByTagName('a:pPr')[0]
+  if (pPr) {
+    const defRPr = pPr.getElementsByTagName('a:defRPr')[0]
+    if (defRPr) {
+      // 获取默认颜色
+      const solidFill = defRPr.getElementsByTagName('a:solidFill')[0]
+      if (solidFill) {
+        defaultColor = parseColor(solidFill, theme)
+      }
+    }
+  }
+  
+  // 2. 获取所有文本运行
+  const runs = p.getElementsByTagName('a:r')
+  
+  for (const r of runs) {
+    // 3. 使用默认样式作为基础
+    let color = defaultColor
+    
+    // 4. 如果有run级别的样式，覆盖默认样式
+    const rPr = r.getElementsByTagName('a:rPr')[0]
+    if (rPr) {
+      const solidFill = rPr.getElementsByTagName('a:solidFill')[0]
+      if (solidFill) {
+        color = parseColor(solidFill, theme)  // 覆盖默认颜色
+      }
+    }
+    
+    fragments.push({ text, color })
+  }
+}
+```
+
+**修改 slide.ts - parseTextStyle 函数**
+```typescript
+function parseTextStyle(txBody: Element, theme: any): any {
+  const style: any = {}
+  
+  // 1. 首先检查段落级别的默认文本属性
+  const pPr = p.getElementsByTagName('a:pPr')[0]
+  if (pPr) {
+    const defRPr = pPr.getElementsByTagName('a:defRPr')[0]
+    if (defRPr) {
+      // 获取字体大小
+      const sz = defRPr.getAttribute('sz')
+      if (sz) {
+        style.fontSize = parseInt(sz) / 100
+      }
+      
+      // 获取粗体
+      const b = defRPr.getAttribute('b')
+      if (b === '1') {
+        style.bold = true
+      }
+      
+      // 获取颜色
+      const solidFill = defRPr.getElementsByTagName('a:solidFill')[0]
+      if (solidFill) {
+        style.color = parseColor(solidFill, theme)
+      }
+    }
+  }
+  
+  // 2. 然后检查第一个文本运行的属性，覆盖默认值
+  const r = p.getElementsByTagName('a:r')[0]
+  if (r) {
+    const rPr = r.getElementsByTagName('a:rPr')[0]
+    if (rPr) {
+      // 覆盖默认值...
+    }
+  }
+}
+```
+
+### 测试结果
+
+**标题样式**：
+- ✅ 颜色：`#0366D6`（蓝色）
+- ✅ 大小：54pt
+- ✅ 粗体：是
+- ✅ 位置：(164, 274) px
+
+**副标题样式**：
+- ✅ 颜色：`#24292E`（深灰）
+- ✅ 大小：32pt
+- ✅ 位置：(291, 428) px
+
+### 修复效果
+
+- ✅ **占位符正确显示** - 标题和副标题从布局继承位置并正确显示
+- ✅ **文本颜色正确** - 从段落默认属性解析颜色
+- ✅ **文本格式正确** - 字体大小、粗体、斜体等格式正确显示
+- ✅ **位置继承匹配** - 支持精确匹配和相近类型匹配（ctrTitle ↔ title）
+
+### 相关文件
+- `packages/vue-pptx/src/parser/slide.ts` - 占位符解析、段落样式解析
+- `packages/vue-pptx/src/parser/index.ts` - 占位符位置继承逻辑
+
+---
+
+*最后更新: 2026年2月12日*

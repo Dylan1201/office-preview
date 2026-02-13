@@ -121,6 +121,9 @@ export interface PPTXShapeElement extends PPTXElement {
   }
   stroke?: string
   strokeWidth?: number
+  customPath?: string  // 自定义形状的SVG路径数据
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /**

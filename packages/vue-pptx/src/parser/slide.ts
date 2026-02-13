@@ -61,10 +61,14 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
     }
   }
 
+  console.log(`[PPTX Parser] Found ${shapes.length} shapes in slide`)
   for (let i = 0; i < shapes.length; i++) {
     const element = parseShape(shapes[i], theme)
     if (element) {
       elements.push(element)
+      console.log(`  [Shape ${i}] type: ${element.type}, id: ${element.id}`)
+    } else {
+      console.log(`  [Shape ${i}] skipped (null result)`)
     }
   }
 
@@ -84,17 +88,20 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
     }
   }
 
+  console.log(`[PPTX Parser] Found ${pics.length} pictures in slide`)
   for (let i = 0; i < pics.length; i++) {
     // 检测是否为视频元素
     if (isVideoElement(pics[i])) {
       const element = parseVideoElement(pics[i], theme)
       if (element) {
         elements.push(element)
+        console.log(`  [Video ${i}] id: ${element.id}`)
       }
     } else {
       const element = parsePicture(pics[i], theme)
       if (element) {
         elements.push(element)
+        console.log(`  [Picture ${i}] id: ${element.id}`)
       }
     }
   }
@@ -127,10 +134,12 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
     graphicFrames = gfList as any
   }
 
+  console.log(`[PPTX Parser] Found ${graphicFrames.length} graphicFrames in slide`)
   for (let i = 0; i < graphicFrames.length; i++) {
     const tableElement = parseTable(graphicFrames[i], theme)
     if (tableElement) {
       elements.push(tableElement)
+      console.log(`  [Table ${i}] id: ${tableElement.id}`)
     }
   }
 
@@ -164,7 +173,24 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
   }
 
   if (!spPr) {
+    console.log('[PPTX Parser] Shape skipped: no spPr found')
     return null
+  }
+
+  // 检查是否是占位符
+  let phType = ''
+  let phIdx = ''
+  
+  if (nvSpPr) {
+    const nvPr = nvSpPr.getElementsByTagName('p:nvPr')[0] || nvSpPr.getElementsByTagName('nvPr')[0]
+    if (nvPr) {
+      const ph = nvPr.getElementsByTagName('p:ph')[0] || nvPr.getElementsByTagName('ph')[0]
+      if (ph) {
+        phType = ph.getAttribute('type') || 'body'
+        phIdx = ph.getAttribute('idx') || ''
+        console.log(`[PPTX Parser] Found placeholder: type=${phType}, idx=${phIdx}`)
+      }
+    }
   }
 
   // 获取位置和尺寸
@@ -196,7 +222,7 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     // 如果文本不为空，创建文本元素
     // 如果文本为空但有填充/渐变，创建形状元素
     if (text && text.trim()) {
-      return {
+      const textElement = {
         type: 'text',
         id,
         x: getUnitValue(x),
@@ -205,8 +231,14 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
         height: getUnitValue(cy),
         text,
         fragments,
-        style
-      } as PPTXTextElement
+        style,
+        // 添加占位符信息
+        phType,
+        phIdx
+      } as any
+      
+      console.log(`[PPTX Parser] Text element created: id=${id}, phType=${phType}, position=(${x}, ${y}), size=(${cx}, ${cy})`)
+      return textElement
     }
   }
 
@@ -243,14 +275,25 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     fill,
     gradient,
     stroke,
-    strokeWidth: strokeWidth || 1
+    strokeWidth: strokeWidth || 1,
+    // 添加占位符信息
+    phType,
+    phIdx
   } as any
 
-  // 过滤掉无效的形状（尺寸为0）
+  // 占位符即使尺寸为0也要返回（位置会从布局继承）
+  if (phType) {
+    console.log(`[PPTX Parser] Placeholder element created: type=${phType}, position=(${x}, ${y})`)
+    return element
+  }
+
+  // 过滤掉无效的形状（尺寸为0）- 但保留很小的形状（至少一个维度>0）
   if (element.width === 0 && element.height === 0) {
+    console.log(`[PPTX Parser] Shape skipped: zero size (id: ${id})`)
     return null
   }
 
+  console.log(`[PPTX Parser] Shape created: type=${element.type}, id=${id}, hasText=${!!txBody}, hasFill=${!!fill}, hasGradient=${!!gradient}, hasStroke=${!!stroke}`)
   return element
 }
 
@@ -308,13 +351,18 @@ function parsePicture(pic: Element, _theme: any): PPTXElement | null {
 
   if (blip) {
     // 尝试多种方式获取 embed 属性
-    blipRelId = blip.getAttribute('r:embed') || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed') || undefined
+    const embedAttr = blip.getAttribute('r:embed')
+      || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed')
+      || blip.getAttribute('embed')
 
-    // 如果还是获取不到，遍历所有属性查找
-    if (!blipRelId) {
+    if (embedAttr) {
+      blipRelId = embedAttr
+    } else {
+      // 如果还是获取不到，使用localName查找
       for (let i = 0; i < blip.attributes.length; i++) {
         const attr = blip.attributes[i]
-        if (attr.name.endsWith(':embed') || attr.localName === 'embed') {
+        const attrName = attr.name || attr.localName || ''
+        if (attrName === 'r:embed' || attrName === 'embed' || attrName.endsWith(':embed')) {
           blipRelId = attr.value
           break
         }
@@ -502,7 +550,71 @@ function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
 function parseTextFragments(p: Element, theme: any): Array<{ text: string; color?: string; backgroundColor?: string }> {
   const fragments: Array<{ text: string; color?: string; backgroundColor?: string }> = []
 
-  // 获取所有run
+  // 1. 首先获取段落级别的默认文本属性
+  let defaultColor: string | undefined
+  let defaultBackgroundColor: string | undefined
+  
+  const pPr = p.getElementsByTagName('a:pPr')[0] || p.getElementsByTagName('pPr')[0]
+  
+  if (pPr) {
+    const defRPr = pPr.getElementsByTagName('a:defRPr')[0] || pPr.getElementsByTagName('defRPr')[0]
+    
+    if (defRPr) {
+      // 尝试获取默认颜色
+      let solidFill = defRPr.getElementsByTagName('a:solidFill')[0] ||
+                      defRPr.getElementsByTagName('solidFill')[0]
+      
+      if (!solidFill) {
+        const allChildren = defRPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'solidFill') {
+            solidFill = allChildren[j]
+            break
+          }
+        }
+      }
+      
+      if (solidFill) {
+        defaultColor = parseColor(solidFill, theme)
+        console.log(`[PPTX Parser] Found default text color in pPr/defRPr: ${defaultColor}`)
+      }
+      
+      // 尝试获取默认背景色
+      let highlight = defRPr.getElementsByTagName('a:highlight')[0] ||
+                     defRPr.getElementsByTagName('highlight')[0]
+      
+      if (!highlight) {
+        const allChildren = defRPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'highlight') {
+            highlight = allChildren[j]
+            break
+          }
+        }
+      }
+      
+      if (highlight) {
+        let highlightFill = highlight.getElementsByTagName('a:solidFill')[0] ||
+                           highlight.getElementsByTagName('solidFill')[0]
+        
+        if (!highlightFill) {
+          const allChildren = highlight.getElementsByTagName('*')
+          for (let j = 0; j < allChildren.length; j++) {
+            if (allChildren[j].localName === 'solidFill') {
+              highlightFill = allChildren[j]
+              break
+            }
+          }
+        }
+        
+        if (highlightFill) {
+          defaultBackgroundColor = parseColor(highlightFill, theme)
+        }
+      }
+    }
+  }
+
+  // 2. 获取所有run
   let runs: Element[] = Array.from(p.getElementsByTagName('a:r'))
   if (runs.length === 0) {
     runs = Array.from(p.getElementsByTagName('r'))
@@ -553,8 +665,11 @@ function parseTextFragments(p: Element, theme: any): Array<{ text: string; color
       }
     }
 
-    let color: string | undefined
-    let backgroundColor: string | undefined
+    // 3. 使用默认样式作为基础
+    let color = defaultColor
+    let backgroundColor = defaultBackgroundColor
+    
+    // 4. 如果有run级别的样式，覆盖默认样式
     if (rPr) {
       // 尝试获取 solidFill (文字颜色)
       let solidFill = rPr.getElementsByTagName('a:solidFill')[0] ||
@@ -657,14 +772,72 @@ function parseTextStyle(txBody: Element, theme: any): any {
   let p = txBody.getElementsByTagName('a:p')[0] || txBody.getElementsByTagName('p')[0]
   if (!p) return style
 
+  // 1. 首先检查段落级别的默认文本属性
   let pPr = p.getElementsByTagName('a:pPr')[0] || p.getElementsByTagName('pPr')[0]
   if (pPr) {
     const algn = pPr.getAttribute('algn')
     if (algn) {
       style.align = algn
     }
+    
+    // 获取默认文本属性
+    const defRPr = pPr.getElementsByTagName('a:defRPr')[0] || pPr.getElementsByTagName('defRPr')[0]
+    if (defRPr) {
+      const sz = defRPr.getAttribute('sz')
+      if (sz) {
+        style.fontSize = parseInt(sz) / 100
+      }
+      
+      // 解析字体
+      let latin = defRPr.getElementsByTagName('a:latin')[0] || defRPr.getElementsByTagName('latin')[0]
+      let ea = defRPr.getElementsByTagName('a:ea')[0] || defRPr.getElementsByTagName('ea')[0]
+      let cs = defRPr.getElementsByTagName('a:cs')[0] || defRPr.getElementsByTagName('cs')[0]
+      
+      const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface') || cs?.getAttribute('typeface')
+      if (fontFamily) {
+        style.fontFamily = fontFamily
+      }
+      
+      const b = defRPr.getAttribute('b')
+      if (b === '1') {
+        style.bold = true
+      }
+      
+      const i = defRPr.getAttribute('i')
+      if (i === '1') {
+        style.italic = true
+      }
+      
+      const u = defRPr.getAttribute('u')
+      if (u && u !== 'none') {
+        style.underline = true
+      }
+      
+      // 获取默认颜色
+      let solidFill = defRPr.getElementsByTagName('a:solidFill')[0] ||
+                      defRPr.getElementsByTagName('solidFill')[0]
+      
+      if (!solidFill) {
+        const allChildren = defRPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'solidFill') {
+            solidFill = allChildren[j]
+            break
+          }
+        }
+      }
+      
+      if (solidFill) {
+        const color = parseColor(solidFill, theme)
+        if (color) {
+          style.color = color
+          console.log(`[PPTX Parser] Text style color from defRPr: ${color}`)
+        }
+      }
+    }
   }
 
+  // 2. 然后检查第一个文本运行的属性，覆盖默认值
   let r = p.getElementsByTagName('a:r')[0] || p.getElementsByTagName('r')[0]
   if (r) {
     let rPr = r.getElementsByTagName('a:rPr')[0] || r.getElementsByTagName('rPr')[0]
@@ -684,6 +857,45 @@ function parseTextStyle(txBody: Element, theme: any): any {
       const sz = rPr.getAttribute('sz')
       if (sz) {
         style.fontSize = parseInt(sz) / 100
+      }
+
+      // 解析字体：依次查找 latin、ea、cs 的 typeface 属性
+      let latin = rPr.getElementsByTagName('a:latin')[0] || rPr.getElementsByTagName('latin')[0]
+      let ea = rPr.getElementsByTagName('a:ea')[0] || rPr.getElementsByTagName('ea')[0]
+      let cs = rPr.getElementsByTagName('a:cs')[0] || rPr.getElementsByTagName('cs')[0]
+
+      if (!latin) {
+        const allChildren = rPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'latin') {
+            latin = allChildren[j]
+            break
+          }
+        }
+      }
+      if (!ea) {
+        const allChildren = rPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'ea') {
+            ea = allChildren[j]
+            break
+          }
+        }
+      }
+      if (!cs) {
+        const allChildren = rPr.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'cs') {
+            cs = allChildren[j]
+            break
+          }
+        }
+      }
+
+      // 优先使用中文字体(ea)，然后是拉丁字体(latin)，最后是复杂脚本字体(cs)
+      const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface') || cs?.getAttribute('typeface')
+      if (fontFamily) {
+        style.fontFamily = fontFamily
       }
 
       const b = rPr.getAttribute('b')

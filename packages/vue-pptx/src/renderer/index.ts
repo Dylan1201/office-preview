@@ -42,6 +42,16 @@ export class PPTXRenderer {
     slideEl.style.backgroundColor = slide.background?.color || '#ffffff';
     slideEl.style.overflow = 'hidden';
 
+    // 应用背景图片
+    console.log('[PPTX Renderer] Rendering slide with background:', slide.background?.src?.substring(0, 50))
+    if (slide.background?.src) {
+      slideEl.style.backgroundImage = `url('${slide.background.src}')`;
+      slideEl.style.backgroundSize = 'cover';
+      slideEl.style.backgroundPosition = 'center';
+      slideEl.style.backgroundRepeat = 'no-repeat';
+      console.log('[PPTX Renderer] Background style set:', slideEl.style.backgroundImage?.substring(0, 50))
+    }
+
     // 渲染所有元素
     slide.elements.forEach((element) => {
       const elementEl = this.renderElement(element);
@@ -117,8 +127,11 @@ export class PPTXRenderer {
           ? 'flex-start'
           : style.align === 'right'
             ? 'flex-end'
-            : 'center';
-      textEl.style.textAlign = style.align;
+            : style.align === 'dist' || style.align === 'justify'
+              ? 'space-between'
+              : 'center';
+      textEl.style.textAlign =
+        style.align === 'dist' ? 'justify' : style.align;
     }
     // 垂直对齐：覆盖默认的居中
     if (style.verticalAlign) {
@@ -213,6 +226,134 @@ export class PPTXRenderer {
    * 渲染形状元素
    */
   private renderShapeElement(element: PPTXShapeElement): HTMLElement {
+    // 处理自定义路径形状
+    if (element.customPath) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.setAttribute('width', element.width.toString())
+      svg.setAttribute('height', element.height.toString())
+      svg.setAttribute('viewBox', `0 0 ${element.width} ${element.height}`)
+      svg.style.display = 'block'
+      svg.style.overflow = 'visible'
+
+      // 创建defs用于渐变
+      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+
+      // 处理渐变填充
+      if (element.gradient && element.gradient.type === 'linear') {
+        const { colors, angle } = element.gradient
+        if (colors.length >= 2) {
+          const gradientId = `grad-${element.id}`
+
+          // 创建linearGradient
+          const linearGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+          linearGradient.setAttribute('id', gradientId)
+          linearGradient.setAttribute('gradientUnits', 'userSpaceOnUse')
+
+          // 计算渐变坐标（基于角度）
+          // PPTX角度：0=右, 90=下, 180=左, 270=上
+          // SVG角度需要转换
+          const angleRad = (angle - 90) * Math.PI / 180
+          const cx = element.width / 2
+          const cy = element.height / 2
+          const r = Math.max(element.width, element.height) / 2
+
+          const x1 = cx - r * Math.cos(angleRad)
+          const y1 = cy - r * Math.sin(angleRad)
+          const x2 = cx + r * Math.cos(angleRad)
+          const y2 = cy + r * Math.sin(angleRad)
+
+          linearGradient.setAttribute('x1', x1.toString())
+          linearGradient.setAttribute('y1', y1.toString())
+          linearGradient.setAttribute('x2', x2.toString())
+          linearGradient.setAttribute('y2', y2.toString())
+
+          // 添加颜色停止点
+          colors.forEach(stop => {
+            const stopElem = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
+            stopElem.setAttribute('offset', `${stop.pos / 1000}%`)
+            stopElem.setAttribute('stop-color', stop.color)
+            linearGradient.appendChild(stopElem)
+          })
+
+          defs.appendChild(linearGradient)
+
+          // 设置path的fill引用渐变
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+          path.setAttribute('d', element.customPath)
+          path.setAttribute('fill', `url(#${gradientId})`)
+
+          if (element.stroke) {
+            path.setAttribute('stroke', element.stroke)
+            if (element.strokeWidth) {
+              path.setAttribute('stroke-width', element.strokeWidth.toString())
+            }
+          }
+
+          svg.appendChild(defs)
+          svg.appendChild(path)
+        } else {
+          // 只有一种颜色或无渐变
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+          path.setAttribute('d', element.customPath)
+
+          if (element.fill) {
+            path.setAttribute('fill', element.fill)
+          } else if (colors.length > 0) {
+            path.setAttribute('fill', colors[0].color)
+          } else {
+            path.setAttribute('fill', 'none')
+          }
+
+          if (element.stroke) {
+            path.setAttribute('stroke', element.stroke)
+            if (element.strokeWidth) {
+              path.setAttribute('stroke-width', element.strokeWidth.toString())
+            }
+          }
+
+          svg.appendChild(path)
+        }
+      } else {
+        // 纯色填充
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        path.setAttribute('d', element.customPath)
+
+        if (element.fill) {
+          path.setAttribute('fill', element.fill)
+        } else {
+          path.setAttribute('fill', 'none')
+        }
+
+        if (element.stroke) {
+          path.setAttribute('stroke', element.stroke)
+          if (element.strokeWidth) {
+            path.setAttribute('stroke-width', element.strokeWidth.toString())
+          }
+        }
+
+        svg.appendChild(path)
+      }
+
+      const container = document.createElement('div')
+      container.className = 'pptx-shape'
+      container.style.position = 'absolute'
+      container.style.left = `${element.x}px`
+      container.style.top = `${element.y}px`
+      container.style.width = `${element.width}px`
+      container.style.height = `${element.height}px`
+
+      // 应用翻转属性到容器
+      if (element.flipH || element.flipV) {
+        const transformValues: string[] = []
+        if (element.flipH) transformValues.push('scaleX(-1)')
+        if (element.flipV) transformValues.push('scaleY(-1)')
+        container.style.transform = transformValues.join(' ')
+      }
+
+      container.appendChild(svg)
+      return container
+    }
+
     // 尝试使用SVG渲染复杂形状
     if (element.shapeType) {
       const svgElement = createShapeElement(
@@ -233,6 +374,15 @@ export class PPTXRenderer {
         container.style.top = `${element.y}px`;
         container.style.width = `${element.width}px`;
         container.style.height = `${element.height}px`;
+
+        // 应用翻转属性到容器
+        if (element.flipH || element.flipV) {
+          const transformValues: string[] = [];
+          if (element.flipH) transformValues.push('scaleX(-1)');
+          if (element.flipV) transformValues.push('scaleY(-1)');
+          container.style.transform = transformValues.join(' ');
+        }
+
         container.appendChild(svgElement);
         return container;
       }
@@ -261,6 +411,14 @@ export class PPTXRenderer {
     shapeEl.style.top = `${element.y}px`;
     shapeEl.style.width = `${element.width}px`;
     shapeEl.style.height = `${element.height}px`;
+
+    // 应用翻转属性
+    if (element.flipH || element.flipV) {
+      const transformValues: string[] = [];
+      if (element.flipH) transformValues.push('scaleX(-1)');
+      if (element.flipV) transformValues.push('scaleY(-1)');
+      shapeEl.style.transform = transformValues.join(' ');
+    }
 
     // 根据形状类型应用对应的样式
     if (element.shapeType) {
