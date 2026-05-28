@@ -1,6 +1,8 @@
 <template>
   <div class="vue-office-docx">
-    <div ref="containerRef" class="vue-office-docx-main"></div>
+    <div class="vue-office-docx-loading" v-if="loading">加载中...</div>
+    <div class="vue-office-docx-error" v-else-if="error">{{ error }}</div>
+    <div ref="containerRef" class="vue-office-docx-main" v-show="!loading && !error"></div>
   </div>
 </template>
 
@@ -17,6 +19,8 @@ const props = withDefaults(defineProps<DocxProps>(), {
 const emit = defineEmits<DocxEmits>()
 
 const containerRef = ref<HTMLElement | null>(null)
+const loading = ref(true)
+const error = ref('')
 
 /**
  * 初始化渲染
@@ -26,21 +30,39 @@ async function init() {
   const container = containerRef.value
   if (!container) return
 
-  // 清空旧内容
+  loading.value = true
+  error.value = ''
+
+  // 清空旧内容并释放 Blob URLs
+  revokeBlobUrls(container)
   container.innerHTML = ''
 
   getData(props.src, props.requestOptions)
     .then(async res => {
       await render(res, container, props.options)
       await nextTick()
+      loading.value = false
       emit('rendered')
     })
     .catch(e => {
-      render('', container, props.options).catch(() => {
-        container.innerHTML = ''
-      })
+      error.value = e instanceof Error ? e.message : '渲染失败'
+      loading.value = false
+      container.innerHTML = ''
       emit('error', e instanceof Error ? e : new Error(String(e)))
     })
+}
+
+/**
+ * 释放容器中所有 blob: URL
+ */
+function revokeBlobUrls(container: HTMLElement) {
+  const elements = container.querySelectorAll('[src]')
+  elements.forEach(el => {
+    const src = el.getAttribute('src')
+    if (src && src.startsWith('blob:')) {
+      URL.revokeObjectURL(src)
+    }
+  })
 }
 
 onMounted(() => {
@@ -57,12 +79,11 @@ watch(
     } else {
       const container = containerRef.value
       if (container) {
-        render('', container, props.options)
-          .then(() => emit('rendered'))
-          .catch(() => {
-            container.innerHTML = ''
-          })
+        revokeBlobUrls(container)
+        container.innerHTML = ''
       }
+      loading.value = false
+      error.value = ''
     }
   }
 )
@@ -79,6 +100,20 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.vue-office-docx-loading,
+.vue-office-docx-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
+  color: #666;
+}
+
+.vue-office-docx-error {
+  color: #f56c6c;
 }
 
 .vue-office-docx-main {

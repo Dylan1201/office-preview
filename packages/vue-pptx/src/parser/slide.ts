@@ -1,9 +1,10 @@
 import type {
   PPTXSlide,
   PPTXElement,
-  PPTXTextElement,
   PPTXVideoElement,
-  PPTXTableElement
+  PPTXTableElement,
+  PPTXConnectorElement,
+  PPTXParagraph
 } from '../types'
 import { getElementText, parseColor, getUnitValue } from './element'
 
@@ -136,6 +137,13 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
 
   console.log(`[PPTX Parser] Found ${graphicFrames.length} graphicFrames in slide`)
   for (let i = 0; i < graphicFrames.length; i++) {
+    // 检查是图表还是表格
+    const chartElement = parseChartFromGraphicFrame(graphicFrames[i])
+    if (chartElement) {
+      elements.push(chartElement)
+      console.log(`  [Chart ${i}] id: ${chartElement.id}`)
+      continue
+    }
     const tableElement = parseTable(graphicFrames[i], theme)
     if (tableElement) {
       elements.push(tableElement)
@@ -143,157 +151,357 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
     }
   }
 
+  // 尝试查找连接线/线条 (p:cxnSp)
+  let cxnSps: Element[] = Array.from(spTree.getElementsByTagName('p:cxnSp'))
+  if (cxnSps.length === 0) {
+    cxnSps = Array.from(spTree.getElementsByTagName('cxnSp'))
+  }
+  if (cxnSps.length === 0) {
+    const allCxn = spTree.getElementsByTagName('*')
+    cxnSps = []
+    for (let i = 0; i < allCxn.length; i++) {
+      if (allCxn[i].localName === 'cxnSp') {
+        cxnSps.push(allCxn[i])
+      }
+    }
+  }
+
+  console.log(`[PPTX Parser] Found ${cxnSps.length} connectors in slide`)
+  for (let i = 0; i < cxnSps.length; i++) {
+    const element = parseConnector(cxnSps[i])
+    if (element) {
+      elements.push(element)
+      console.log(`  [Connector ${i}] id: ${element.id}`)
+    }
+  }
+
+  // 解析幻灯片直接背景 (p:bg)
+  let background: any = undefined
+  const slideBg = parseSlideBackground(doc, theme)
+  if (slideBg) {
+    background = slideBg
+  }
+
   return {
     id: `slide-${index}`,
     index,
     elements,
     width,
-    height
+    height,
+    ...(background ? { background } : {})
   }
+}
+
+/**
+ * 辅助函数：使用 localName 查找直接子元素
+ */
+function findChildByLocalName(parent: Element, localName: string): Element | null {
+  for (let i = 0; i < parent.children.length; i++) {
+    if (parent.children[i].localName === localName) return parent.children[i]
+  }
+  return null
+}
+
+/**
+ * 辅助函数：使用 localName 在后代中查找所有元素
+ */
+function findDescendantsByLocalName(parent: Element, localName: string): Element[] {
+  const results: Element[] = []
+  const all = parent.getElementsByTagName('*')
+  for (let i = 0; i < all.length; i++) {
+    if (all[i].localName === localName) results.push(all[i])
+  }
+  return results
+}
+
+/**
+ * 辅助函数：多种方式查找元素
+ */
+function findElement(parent: Element, ...names: string[]): Element | null {
+  for (const name of names) {
+    const el = parent.getElementsByTagName(name)[0]
+    if (el) return el
+  }
+  return findDescendantsByLocalName(parent, names[names.length - 1])[0] || null
+}
+
+/**
+ * 解析旋转角度 (xfrm rot 属性，单位 60000ths of a degree)
+ */
+function parseRotation(xfrm: Element | null | undefined): number {
+  if (!xfrm) return 0
+  const rot = xfrm.getAttribute('rot')
+  if (!rot) return 0
+  return parseInt(rot) / 60000
+}
+
+/**
+ * 解析 bodyPr 的 anchor 属性（文本垂直对齐）
+ */
+function parseVerticalAlign(txBody: Element): 'top' | 'middle' | 'bottom' {
+  const bodyPr = findElement(txBody, 'a:bodyPr', 'bodyPr')
+  if (!bodyPr) return 'middle'
+  const anchor = bodyPr.getAttribute('anchor') || ''
+  if (anchor === 't') return 'top'
+  if (anchor === 'b') return 'bottom'
+  return 'middle' // 'ctr' or default
+}
+
+/**
+ * 获取单个段落的文本
+ */
+function getParagraphText(p: Element): string {
+  const texts: string[] = []
+  let runs = p.getElementsByTagName('a:r')
+  if (runs.length === 0) runs = p.getElementsByTagName('r')
+  if (runs.length === 0) {
+    runs = findDescendantsByLocalName(p, 'r') as any
+  }
+  for (let j = 0; j < runs.length; j++) {
+    let t = runs[j].getElementsByTagName('a:t')[0] || runs[j].getElementsByTagName('t')[0]
+    if (!t) t = findDescendantsByLocalName(runs[j], 't')[0] || null
+    if (t?.textContent) texts.push(t.textContent)
+  }
+  return texts.join('')
+}
+
+/**
+ * 从单个段落解析文本样式
+ */
+function parseTextStyleFromParagraph(p: Element, theme: any): any {
+  const style: any = {}
+  const pPr = findElement(p, 'a:pPr', 'pPr')
+  if (pPr) {
+    const algn = pPr.getAttribute('algn')
+    if (algn) style.align = algn
+    const defRPr = findElement(pPr, 'a:defRPr', 'defRPr')
+    if (defRPr) {
+      const sz = defRPr.getAttribute('sz')
+      if (sz) style.fontSize = parseInt(sz) / 100
+      const latin = findElement(defRPr, 'a:latin', 'latin')
+      const ea = findElement(defRPr, 'a:ea', 'ea')
+      const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface')
+      if (fontFamily) style.fontFamily = fontFamily
+      if (defRPr.getAttribute('b') === '1') style.bold = true
+      if (defRPr.getAttribute('i') === '1') style.italic = true
+      const u = defRPr.getAttribute('u')
+      if (u && u !== 'none') style.underline = true
+      const solidFill = findChildByLocalName(defRPr, 'solidFill')
+      if (solidFill) {
+        const color = parseColor(solidFill, theme)
+        if (color) style.color = color
+      }
+    }
+  }
+  // 第一个 run 的样式覆盖
+  let r = p.getElementsByTagName('a:r')[0] || p.getElementsByTagName('r')[0]
+  if (!r) r = findDescendantsByLocalName(p, 'r')[0] || null
+  if (r) {
+    const rPr = findElement(r, 'a:rPr', 'rPr')
+    if (rPr) {
+      const sz = rPr.getAttribute('sz')
+      if (sz) style.fontSize = parseInt(sz) / 100
+      const latin = findElement(rPr, 'a:latin', 'latin')
+      const ea = findElement(rPr, 'a:ea', 'ea')
+      const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface')
+      if (fontFamily) style.fontFamily = fontFamily
+      if (rPr.getAttribute('b') === '1') style.bold = true
+      if (rPr.getAttribute('i') === '1') style.italic = true
+      const u = rPr.getAttribute('u')
+      if (u && u !== 'none') style.underline = true
+      const solidFill = findChildByLocalName(rPr, 'solidFill')
+      if (solidFill) {
+        const color = parseColor(solidFill, theme)
+        if (color) style.color = color
+      } else {
+        const gradFill = findChildByLocalName(rPr, 'gradFill')
+        if (gradFill) {
+          const gradient = parseGradientFromElement(gradFill, theme)
+          if (gradient?.colors?.length) {
+            let closest = gradient.colors[0]
+            let minDiff = Math.abs(closest.pos - 50000)
+            for (const c of gradient.colors) {
+              const diff = Math.abs(c.pos - 50000)
+              if (diff < minDiff) { minDiff = diff; closest = c }
+            }
+            style.color = closest.color
+          }
+        }
+      }
+    }
+  }
+  return style
+}
+
+/**
+ * 解析所有段落
+ */
+function parseAllParagraphs(txBody: Element, theme: any): PPTXParagraph[] {
+  const paragraphs: PPTXParagraph[] = []
+  let pElements = txBody.getElementsByTagName('a:p')
+  if (pElements.length === 0) pElements = txBody.getElementsByTagName('p')
+  if (pElements.length === 0) pElements = findDescendantsByLocalName(txBody, 'p') as any
+  for (let i = 0; i < pElements.length; i++) {
+    const p = pElements[i]
+    const text = getParagraphText(p)
+    const style = parseTextStyleFromParagraph(p, theme)
+    const fragments = parseTextFragments(p, theme)
+    paragraphs.push({ text, fragments, style })
+  }
+  return paragraphs
+}
+
+/**
+ * 解析填充（带 fillRef 样式引用）
+ */
+function parseFillWithRef(sp: Element, spPr: Element, theme: any): string | undefined {
+  // 先检查 spPr 直接子元素中的 noFill
+  for (let i = 0; i < spPr.children.length; i++) {
+    if (spPr.children[i].localName === 'noFill') return undefined
+  }
+  // 检查 solidFill
+  const solidFill = findElement(spPr, 'a:solidFill', 'solidFill')
+  if (solidFill) {
+    const color = parseColor(solidFill, theme)
+    if (color) return color
+  }
+  // 检查 fillRef
+  const style = findElement(sp, 'p:style', 'style')
+  if (style) {
+    const fillRef = findElement(style, 'a:fillRef', 'fillRef')
+    if (fillRef) {
+      const idx = parseInt(fillRef.getAttribute('idx') || '0')
+      if (idx === 0) return undefined // noFill
+      let fillStyleIndex = idx > 1000 ? idx - 1000 : idx - 1
+      if (fillStyleIndex >= 0 && theme?.fillStyles?.[fillStyleIndex]) {
+        const fs = theme.fillStyles[fillStyleIndex]
+        if (fs.type === 'solid') return fs.color
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * 解析渐变（带 fillRef 样式引用）
+ */
+function parseGradientWithRef(sp: Element, spPr: Element, theme: any): any | undefined {
+  const gradFill = findElement(spPr, 'a:gradFill', 'gradFill')
+  if (gradFill) return parseGradientFromElement(gradFill, theme)
+  // 检查 fillRef 中的渐变
+  const style = findElement(sp, 'p:style', 'style')
+  if (style) {
+    const fillRef = findElement(style, 'a:fillRef', 'fillRef')
+    if (fillRef) {
+      const idx = parseInt(fillRef.getAttribute('idx') || '0')
+      if (idx >= 1000) {
+        const fillStyleIndex = idx - 1000
+        if (fillStyleIndex >= 0 && theme?.fillStyles?.[fillStyleIndex]) {
+          const fs = theme.fillStyles[fillStyleIndex]
+          if (fs.type === 'linear') {
+            return { type: 'linear', colors: fs.colors, angle: fs.angle }
+          }
+        }
+      }
+    }
+  }
+  return undefined
 }
 
 /**
  * 解析形状
  */
 function parseShape(sp: Element, theme: any): PPTXElement | null {
-  // 尝试多种方式查找元素
   let nvSpPr = sp.getElementsByTagName('p:nvSpPr')[0] || sp.getElementsByTagName('nvSpPr')[0]
   let spPr = sp.getElementsByTagName('p:spPr')[0] || sp.getElementsByTagName('spPr')[0]
   let txBody = sp.getElementsByTagName('p:txBody')[0] || sp.getElementsByTagName('txBody')[0]
+  if (!spPr) spPr = findDescendantsByLocalName(sp, 'spPr')[0] || null
+  if (!spPr) { console.log('[PPTX Parser] Shape skipped: no spPr found'); return null }
 
-  if (!spPr) {
-    // 使用 localName 查找
-    const allChildren = sp.getElementsByTagName('*')
-    for (let i = 0; i < allChildren.length; i++) {
-      if (allChildren[i].localName === 'spPr') {
-        spPr = allChildren[i]
-        break
-      }
-    }
-  }
-
-  if (!spPr) {
-    console.log('[PPTX Parser] Shape skipped: no spPr found')
-    return null
-  }
-
-  // 检查是否是占位符
+  // 占位符信息
   let phType = ''
   let phIdx = ''
-  
   if (nvSpPr) {
-    const nvPr = nvSpPr.getElementsByTagName('p:nvPr')[0] || nvSpPr.getElementsByTagName('nvPr')[0]
+    const nvPr = findElement(nvSpPr, 'p:nvPr', 'nvPr')
     if (nvPr) {
-      const ph = nvPr.getElementsByTagName('p:ph')[0] || nvPr.getElementsByTagName('ph')[0]
+      const ph = findElement(nvPr, 'p:ph', 'ph')
       if (ph) {
         phType = ph.getAttribute('type') || 'body'
         phIdx = ph.getAttribute('idx') || ''
-        console.log(`[PPTX Parser] Found placeholder: type=${phType}, idx=${phIdx}`)
       }
     }
   }
 
-  // 获取位置和尺寸
-  let xfrm = spPr.getElementsByTagName('a:xfrm')[0] || spPr.getElementsByTagName('p:xfrm')[0] || spPr.getElementsByTagName('xfrm')[0]
+  // 位置、尺寸、旋转、翻转
+  let xfrm = findElement(spPr, 'a:xfrm', 'p:xfrm', 'xfrm')
   let off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
   let ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
-
   const x = off ? parseInt(off.getAttribute('x') || '0') : 0
   const y = off ? parseInt(off.getAttribute('y') || '0') : 0
   const cx = ext ? parseInt(ext.getAttribute('cx') || '0') : 0
   const cy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
+  const rotation = parseRotation(xfrm)
+  const flipH = xfrm?.getAttribute('flipH') === '1'
+  const flipV = xfrm?.getAttribute('flipV') === '1'
 
-  // 获取ID
+  // ID
   let cNvPr = nvSpPr?.getElementsByTagName('p:cNvPr')[0] || nvSpPr?.getElementsByTagName('cNvPr')[0]
+  if (!cNvPr) cNvPr = findDescendantsByLocalName(sp, 'cNvPr')[0] || null
   const id = cNvPr?.getAttribute('id') || `shape-${Date.now()}-${Math.random()}`
 
-  // 如果有文本内容，创建文本元素
+  // 解析形状视觉属性（不论是否有文本都需要）
+  const shapeType = parseShapeType(spPr)
+  const fill = parseFillWithRef(sp, spPr, theme)
+  const gradient = parseGradientWithRef(sp, spPr, theme)
+  const stroke = parseStroke(spPr, theme)
+  let strokeWidth = 0
+  if (stroke) {
+    const ln = findElement(spPr, 'a:ln', 'ln')
+    if (ln) { const w = ln.getAttribute('w'); if (w) strokeWidth = parseInt(w) / 9525 }
+  }
+  const verticalAlign = txBody ? parseVerticalAlign(txBody) : undefined
+
+  // 提取自定义路径
+  let customPath: string | undefined
+  if (shapeType === 'custom') {
+    const custGeom = findElement(spPr, 'a:custGeom', 'custGeom')
+    if (custGeom) {
+      customPath = parseCustomPath(custGeom, cx, cy)
+    }
+  }
+
+  // 如果有文本内容，创建文本元素（保留形状视觉属性）
   if (txBody) {
     const text = getElementText(txBody)
     const style = parseTextStyle(txBody, theme)
-
-    // 解析文本片段（支持每个片段不同颜色）
+    const paragraphs = parseAllParagraphs(txBody, theme)
     let p = txBody.getElementsByTagName('a:p')[0] || txBody.getElementsByTagName('p')[0]
     let fragments: Array<{ text: string; color?: string }> | undefined
-    if (p) {
-      fragments = parseTextFragments(p, theme)
-    }
+    if (p) fragments = parseTextFragments(p, theme)
 
-    // 如果文本不为空，创建文本元素
-    // 如果文本为空但有填充/渐变，创建形状元素
     if (text && text.trim()) {
-      const textElement = {
-        type: 'text',
-        id,
-        x: getUnitValue(x),
-        y: getUnitValue(y),
-        width: getUnitValue(cx),
-        height: getUnitValue(cy),
-        text,
-        fragments,
-        style,
-        // 添加占位符信息
-        phType,
-        phIdx
+      return {
+        type: 'text', id,
+        x: getUnitValue(x), y: getUnitValue(y), width: getUnitValue(cx), height: getUnitValue(cy),
+        text, fragments, paragraphs: paragraphs.length > 1 ? paragraphs : undefined,
+        style, verticalAlign, rotation, flipH, flipV,
+        shapeType: shapeType !== 'rect' ? shapeType : undefined,
+        fill, gradient,
+        stroke, strokeWidth: strokeWidth || (stroke ? 1 : undefined),
+        phType, phIdx
       } as any
-      
-      console.log(`[PPTX Parser] Text element created: id=${id}, phType=${phType}, position=(${x}, ${y}), size=(${cx}, ${cy})`)
-      return textElement
     }
   }
 
-  // 解析形状类型（如圆形、椭圆等）
-  const shapeType = parseShapeType(spPr)
-
-  // 创建形状元素（包括空文本框）
-  const fill = parseFill(spPr, theme)
-  const gradient = parseGradient(spPr, theme)
-  const stroke = parseStroke(spPr, theme)
-
-  // 解析描边宽度
-  let strokeWidth = 0
-  if (stroke) {
-    const ln = spPr.getElementsByTagName('a:ln')[0] || spPr.getElementsByTagName('ln')[0]
-    if (ln) {
-      const w = ln.getAttribute('w')
-      if (w) {
-        // PPT中的描边宽度单位是 EMU (English Metric Units), 1 inch = 914400 EMU
-        // 转换为像素
-        strokeWidth = parseInt(w) / 9525
-      }
-    }
+  // 形状元素（无文本）
+  const element: any = {
+    type: 'shape', id,
+    x: getUnitValue(x), y: getUnitValue(y), width: getUnitValue(cx), height: getUnitValue(cy),
+    shapeType, fill, gradient, stroke, strokeWidth: strokeWidth || 1,
+    rotation, flipH, flipV, phType, phIdx, customPath
   }
-
-  const element = {
-    type: 'shape',
-    id,
-    x: getUnitValue(x),
-    y: getUnitValue(y),
-    width: getUnitValue(cx),
-    height: getUnitValue(cy),
-    shapeType,
-    fill,
-    gradient,
-    stroke,
-    strokeWidth: strokeWidth || 1,
-    // 添加占位符信息
-    phType,
-    phIdx
-  } as any
-
-  // 占位符即使尺寸为0也要返回（位置会从布局继承）
-  if (phType) {
-    console.log(`[PPTX Parser] Placeholder element created: type=${phType}, position=(${x}, ${y})`)
-    return element
-  }
-
-  // 过滤掉无效的形状（尺寸为0）- 但保留很小的形状（至少一个维度>0）
-  if (element.width === 0 && element.height === 0) {
-    console.log(`[PPTX Parser] Shape skipped: zero size (id: ${id})`)
-    return null
-  }
-
-  console.log(`[PPTX Parser] Shape created: type=${element.type}, id=${id}, hasText=${!!txBody}, hasFill=${!!fill}, hasGradient=${!!gradient}, hasStroke=${!!stroke}`)
+  if (phType) return element
+  if (element.width === 0 && element.height === 0) return null
   return element
 }
 
@@ -1023,41 +1231,197 @@ function parseShapeType(spPr: Element): string | undefined {
 }
 
 /**
- * 解析填充
+ * 解析连接线/线条元素
  */
-function parseFill(spPr: Element, theme: any): string | undefined {
-  // 只检查直接子元素中是否有 noFill（无填充）
-  // 使用 children 而不是 getElementsByTagName，避免递归搜索到描边元素内的 noFill
-  const children = spPr.children
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i]
-    const localName = child.localName || child.tagName.replace(/^a:/, '').replace(/^p:/, '')
-    if (localName === 'noFill') {
-      return undefined
-    }
-  }
+function parseConnector(cxnSp: Element): PPTXConnectorElement | null {
+  try {
+    const spPr = findElement(cxnSp, 'p:spPr', 'spPr')
+    if (!spPr) return null
 
-  // 尝试解析 solidFill
-  let solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
-  if (solidFill) {
-    const color = parseColor(solidFill, theme)
-    if (color) {
-      return color
-    }
-  }
+    // 获取位置和尺寸
+    const xfrm = findElement(spPr, 'a:xfrm', 'xfrm')
+    const off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
+    const ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
+    const x = off ? parseInt(off.getAttribute('x') || '0') : 0
+    const y = off ? parseInt(off.getAttribute('y') || '0') : 0
+    const cx = ext ? parseInt(ext.getAttribute('cx') || '0') : 0
+    const cy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
 
-  // 如果没有直接的填充定义，返回 undefined（可能是圆环或者真的无填充）
-  return undefined
+    const rotation = parseRotation(xfrm)
+    const flipH = xfrm?.getAttribute('flipH') === '1'
+    const flipV = xfrm?.getAttribute('flipV') === '1'
+
+    // 获取 ID
+    const cNvPr = findDescendantsByLocalName(cxnSp, 'cNvPr')[0] || null
+    const id = cNvPr?.getAttribute('id') || `connector-${Date.now()}-${Math.random()}`
+
+    // 连接器类型
+    let connectorType: 'straight' | 'curved' | 'bent' | 'elbow' = 'straight'
+    const prstGeom = findElement(spPr, 'a:prstGeom', 'prstGeom')
+    if (prstGeom) {
+      const prst = prstGeom.getAttribute('prst') || ''
+      if (prst === 'curvedConnector3' || prst === 'curvedConnector4' || prst === 'curvedConnector5') {
+        connectorType = 'curved'
+      } else if (prst === 'bentConnector3' || prst === 'bentConnector4' || prst === 'bentConnector5') {
+        connectorType = 'bent'
+      } else if (prst === ' elbow') {
+        connectorType = 'elbow'
+      }
+    }
+
+    // 构建连接线端点（使用相对于元素边界的坐标）
+    const w = getUnitValue(cx)
+    const h = getUnitValue(cy)
+    const points = [
+      { x: 0, y: h / 2 },
+      { x: w, y: h / 2 }
+    ]
+    if (cy > 0 && cx === 0) {
+      points[0] = { x: 0, y: 0 }
+      points[1] = { x: 0, y: h }
+    }
+
+    // 解析线条样式
+    const ln = findElement(spPr, 'a:ln', 'ln')
+    let stroke: string | undefined
+    let strokeWidth = 1
+    let dashStyle: string | undefined
+    let headEnd: string | undefined
+    let tailEnd: string | undefined
+
+    if (ln) {
+      const w = ln.getAttribute('w')
+      if (w) strokeWidth = parseInt(w) / 9525
+
+      const solidFill = findElement(ln, 'a:solidFill', 'solidFill')
+      if (solidFill) stroke = parseColor(solidFill, {})
+
+      // 虚线样式
+      const prstDash = findElement(ln, 'a:prstDash', 'prstDash')
+      if (prstDash) {
+        const val = prstDash.getAttribute('val') || 'solid'
+        dashStyle = val
+      }
+
+      // 箭头头部
+      const tailEndElem = findElement(ln, 'a:tailEnd', 'tailEnd')
+      if (tailEndElem) {
+        const type = tailEndElem.getAttribute('type') || 'none'
+        if (type !== 'none') tailEnd = type as any
+      }
+      const headEndElem = findElement(ln, 'a:headEnd', 'headEnd')
+      if (headEndElem) {
+        const type = headEndElem.getAttribute('type') || 'none'
+        if (type !== 'none') headEnd = type as any
+      }
+    }
+
+    return {
+      type: 'connector',
+      id,
+      x: getUnitValue(x),
+      y: getUnitValue(y),
+      width: getUnitValue(cx),
+      height: getUnitValue(cy),
+      rotation,
+      flipH,
+      flipV,
+      connectorType,
+      points,
+      stroke: stroke || '#000000',
+      strokeWidth: strokeWidth || 1,
+      dashStyle: dashStyle as any,
+      headEnd: headEnd as PPTXConnectorElement['headEnd'],
+      tailEnd: tailEnd as PPTXConnectorElement['tailEnd']
+    }
+  } catch (e) {
+    return null
+  }
 }
 
 /**
- * 解析渐变填充
+ * 解析幻灯片直接背景 (p:bg)
  */
-function parseGradient(spPr: Element, theme: any): any | undefined {
-  let gradFill = spPr.getElementsByTagName('a:gradFill')[0] || spPr.getElementsByTagName('gradFill')[0]
-  if (!gradFill) return undefined
+function parseSlideBackground(doc: Document, theme: any): any | undefined {
+  try {
+    // 查找 p:bg 元素
+    let bg = doc.getElementsByTagName('p:bg')[0]
+    if (!bg) bg = findDescendantsByLocalName(doc.documentElement, 'bg')[0] || null
+    if (!bg) return undefined
 
-  return parseGradientFromElement(gradFill, theme)
+    // 查找 bgPr (背景属性)
+    let bgPr = bg.getElementsByTagName('p:bgPr')[0]
+    if (!bgPr) bgPr = findDescendantsByLocalName(bg, 'bgPr')[0] || null
+    if (!bgPr) return undefined
+
+    // 检查纯色填充
+    const solidFill = findElement(bgPr, 'a:solidFill', 'solidFill')
+    if (solidFill) {
+      const color = parseColor(solidFill, theme)
+      if (color) return { type: 'solid', color }
+    }
+
+    // 检查渐变填充
+    const gradFill = findElement(bgPr, 'a:gradFill', 'gradFill')
+    if (gradFill) {
+      const gradient = parseGradientFromElement(gradFill, theme)
+      if (gradient && gradient.colors?.length >= 2) {
+        return { type: 'gradient', gradient }
+      }
+    }
+
+    return undefined
+  } catch (e) {
+    return undefined
+  }
+}
+
+/**
+ * 解析图表信息（从 graphicFrame 中的 graphicData 判断类型）
+ */
+function parseChartFromGraphicFrame(graphicFrame: Element): PPTXElement | null {
+  try {
+    const graphicData = findDescendantsByLocalName(graphicFrame, 'graphicData')[0]
+    if (!graphicData) return null
+
+    // 检查是否包含图表引用 (c:chart)
+    const chartRef = findDescendantsByLocalName(graphicData, 'chart')[0]
+    if (!chartRef) return null
+
+    // 这是一个图表元素，但需要从 zip 中加载图表数据
+    // 这里只创建占位符，图表数据在 index.ts 中填充
+    const xfrm = findElement(graphicFrame, 'a:xfrm', 'xfrm')
+    const off = xfrm?.getElementsByTagName('a:off')[0] || xfrm?.getElementsByTagName('off')[0]
+    const ext = xfrm?.getElementsByTagName('a:ext')[0] || xfrm?.getElementsByTagName('ext')[0]
+    const x = off ? parseInt(off.getAttribute('x') || '0') : 0
+    const y = off ? parseInt(off.getAttribute('y') || '0') : 0
+    const cx = ext ? parseInt(ext.getAttribute('cx') || '0') : 0
+    const cy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
+
+    // 获取图表关系 ID
+    const rId = chartRef.getAttribute('r:id') || chartRef.getAttribute('id')
+      || ((): string => {
+        for (let i = 0; i < chartRef.attributes.length; i++) {
+          const attr = chartRef.attributes[i]
+          if (attr.localName === 'id' || attr.name.endsWith(':id')) return attr.value
+        }
+        return ''
+      })()
+
+    return {
+      type: 'chart',
+      id: `chart-${Date.now()}-${Math.random()}`,
+      x: getUnitValue(x),
+      y: getUnitValue(y),
+      width: getUnitValue(cx),
+      height: getUnitValue(cy),
+      chartType: 'column', // 默认，后续从 chart XML 中更新
+      series: [],
+      _chartRId: rId, // 内部使用，用于从 zip 加载图表数据
+    } as any
+  } catch (e) {
+    return null
+  }
 }
 
 /**
@@ -1139,6 +1503,90 @@ function parseStroke(spPr: Element, theme: any): string | undefined {
   if (!solidFill) return undefined
 
   return parseColor(solidFill, theme)
+}
+
+/**
+ * 解析自定义路径为SVG path d属性
+ */
+function parseCustomPath(custGeom: Element, width: number, height: number): string {
+  // 获取path元素
+  let path = custGeom.getElementsByTagName('a:path')[0] || custGeom.getElementsByTagName('path')[0]
+  if (!path) {
+    const allChildren = custGeom.getElementsByTagName('*')
+    for (let i = 0; i < allChildren.length; i++) {
+      if (allChildren[i].localName === 'path') {
+        path = allChildren[i]
+        break
+      }
+    }
+  }
+  if (!path) return ''
+
+  const pathWidth = parseInt(path.getAttribute('w') || '0') || width
+  const pathHeight = parseInt(path.getAttribute('h') || '0') || height
+
+  // 缩放因子：从EMU单位转换到像素
+  const scaleX = width / pathWidth
+  const scaleY = height / pathHeight
+
+  let d = ''
+  const children = path.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const node = children[i]
+    if (node.nodeType !== 1) continue
+    const el = node as Element
+    const localName = el.localName
+    if (localName === 'moveTo') {
+      const pt = el.getElementsByTagName('a:pt')[0] || el.getElementsByTagName('pt')[0]
+      if (pt) {
+        const x = parseFloat(pt.getAttribute('x') || '0') * scaleX
+        const y = parseFloat(pt.getAttribute('y') || '0') * scaleY
+        d += `M ${x} ${y} `
+      }
+    } else if (localName === 'lnTo') {
+      const pt = el.getElementsByTagName('a:pt')[0] || el.getElementsByTagName('pt')[0]
+      if (pt) {
+        const x = parseFloat(pt.getAttribute('x') || '0') * scaleX
+        const y = parseFloat(pt.getAttribute('y') || '0') * scaleY
+        d += `L ${x} ${y} `
+      }
+    } else if (localName === 'cubicBezTo') {
+      const pt1 = el.getElementsByTagName('a:pt')[0]
+      const pt2 = el.getElementsByTagName('a:pt')[1]
+      const pt3 = el.getElementsByTagName('a:pt')[2]
+      if (pt1 && pt2 && pt3) {
+        const x1 = parseFloat(pt1.getAttribute('x') || '0') * scaleX
+        const y1 = parseFloat(pt1.getAttribute('y') || '0') * scaleY
+        const x2 = parseFloat(pt2.getAttribute('x') || '0') * scaleX
+        const y2 = parseFloat(pt2.getAttribute('y') || '0') * scaleY
+        const x3 = parseFloat(pt3.getAttribute('x') || '0') * scaleX
+        const y3 = parseFloat(pt3.getAttribute('y') || '0') * scaleY
+        d += `C ${x1} ${y1} ${x2} ${y2} ${x3} ${y3} `
+      }
+    } else if (localName === 'quadBezTo') {
+      const pt1 = el.getElementsByTagName('a:pt')[0]
+      const pt2 = el.getElementsByTagName('a:pt')[1]
+      if (pt1 && pt2) {
+        const x1 = parseFloat(pt1.getAttribute('x') || '0') * scaleX
+        const y1 = parseFloat(pt1.getAttribute('y') || '0') * scaleY
+        const x2 = parseFloat(pt2.getAttribute('x') || '0') * scaleX
+        const y2 = parseFloat(pt2.getAttribute('y') || '0') * scaleY
+        d += `Q ${x1} ${y1} ${x2} ${y2} `
+      }
+    } else if (localName === 'arcTo') {
+      // 简化弧线为直线
+      const pt = el.getElementsByTagName('a:pt')[0]
+      if (pt) {
+        const x = parseFloat(pt.getAttribute('x') || '0') * scaleX
+        const y = parseFloat(pt.getAttribute('y') || '0') * scaleY
+        d += `L ${x} ${y} `
+      }
+    } else if (localName === 'close') {
+      d += 'Z '
+    }
+  }
+
+  return d.trim()
 }
 
 /**

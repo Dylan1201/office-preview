@@ -146,9 +146,22 @@ function getCellStyle(cell: any): any {
   if (style.font?.size) styles.fontSize = `${style.font.size}px`
   if (style.font?.bold) styles.fontWeight = 'bold'
   if (style.font?.italic) styles.fontStyle = 'italic'
+  if (style.font?.name) styles.fontFamily = style.font.name
   if (style.textwrap) styles.whiteSpace = 'pre-wrap'
   if (style.border) {
-    styles.border = '1px solid #ddd'
+    // 渲染实际边框样式（支持不同边框类型和颜色）
+    const borderPositions: Record<string, string> = {
+      top: 'borderTop', left: 'borderLeft', bottom: 'borderBottom', right: 'borderRight'
+    }
+    Object.keys(style.border).forEach((pos) => {
+      const cssProp = borderPositions[pos as string]
+      if (!cssProp) return
+      const borderData = style.border[pos as string]
+      if (Array.isArray(borderData) && borderData.length >= 2) {
+        const [borderStyle, borderColor] = borderData
+        styles[cssProp] = `1px ${borderStyle || 'solid'} ${borderColor || '#ddd'}`
+      }
+    })
   }
 
   return styles

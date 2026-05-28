@@ -295,6 +295,141 @@ function createDonut(
 }
 
 /**
+ * 渲染平行四边形
+ */
+function createParallelogram(
+  width: number,
+  height: number,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number
+): SVGElement {
+  const svg = createSVG(width, height)
+  // 斜切角度默认为宽度的15%
+  const skew = width * 0.15
+  const d = `M ${skew} 0 L ${width} 0 L ${width - skew} ${height} L 0 ${height} Z`
+  const path = createPath(d, fill, stroke, strokeWidth)
+  svg.appendChild(path)
+  return svg
+}
+
+/**
+ * 渲染梯形
+ */
+function createTrapezoid(
+  width: number,
+  height: number,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number
+): SVGElement {
+  const svg = createSVG(width, height)
+  const skew = width * 0.1
+  const d = `M ${skew} 0 L ${width - skew} 0 L ${width} ${height} L 0 ${height} Z`
+  const path = createPath(d, fill, stroke, strokeWidth)
+  svg.appendChild(path)
+  return svg
+}
+
+/**
+ * 渲染圆柱体
+ */
+function createCan(
+  width: number,
+  height: number,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number
+): SVGElement {
+  const svg = createSVG(width, height)
+  const cx = width / 2
+  const ry = height * 0.15
+  const bodyTop = ry
+  const bodyBottom = height - ry
+
+  // 椭圆（顶部）
+  const top = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse')
+  top.setAttribute('cx', cx.toString())
+  top.setAttribute('cy', ry.toString())
+  top.setAttribute('rx', (width / 2).toString())
+  top.setAttribute('ry', ry.toString())
+  top.setAttribute('fill', fill || '#fff')
+  if (stroke) top.setAttribute('stroke', stroke)
+  if (strokeWidth) top.setAttribute('stroke-width', strokeWidth.toString())
+  svg.appendChild(top)
+
+  // 矩形（主体）
+  const body = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  body.setAttribute('x', '0')
+  body.setAttribute('y', ry.toString())
+  body.setAttribute('width', width.toString())
+  body.setAttribute('height', (height - ry * 2).toString())
+  body.setAttribute('fill', fill || '#fff')
+  if (stroke) body.setAttribute('stroke', stroke)
+  if (strokeWidth) body.setAttribute('stroke-width', strokeWidth.toString())
+  svg.appendChild(body)
+
+  // 椭圆（底部）
+  const bottom = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse')
+  bottom.setAttribute('cx', cx.toString())
+  bottom.setAttribute('cy', (height - ry).toString())
+  bottom.setAttribute('rx', (width / 2).toString())
+  bottom.setAttribute('ry', ry.toString())
+  bottom.setAttribute('fill', fill || '#fff')
+  if (stroke) bottom.setAttribute('stroke', stroke)
+  if (strokeWidth) bottom.setAttribute('stroke-width', strokeWidth.toString())
+  svg.appendChild(bottom)
+
+  return svg
+}
+
+/**
+ * 渲染立方体/3D矩形
+ */
+function createCube(
+  width: number,
+  height: number,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number
+): SVGElement {
+  const svg = createSVG(width, height)
+  const offset = height * 0.2
+  const d = `M 0 ${offset} L ${width} 0 L ${width} ${height - offset} L 0 ${height} Z`
+  const path = createPath(d, fill, stroke, strokeWidth)
+  svg.appendChild(path)
+  return svg
+}
+
+/**
+ * 渲染环形箭头
+ */
+function createCircularArrow(
+  width: number,
+  height: number,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number
+): SVGElement {
+  const svg = createSVG(width, height)
+  const cx = width / 2
+  const cy = height / 2
+  const r = Math.min(width, height) / 2 - 10
+  const d = `
+    M ${cx + r} ${cy}
+    A ${r} ${r} 0 1 1 ${cx - r * 0.7} ${cy - r * 0.7}
+    L ${cx - r * 0.4} ${cy - r * 0.9}
+    L ${cx - r * 0.9} ${cy - r * 0.4}
+    L ${cx - r * 0.7} ${cy - r * 0.7}
+    A ${r * 0.5} ${r * 0.5} 0 1 0 ${cx + r * 0.5} ${cy}
+    Z
+  `.trim().replace(/\s+/g, ' ')
+  const path = createPath(d, fill, stroke, strokeWidth)
+  svg.appendChild(path)
+  return svg
+}
+
+/**
  * 根据形状类型创建SVG元素
  */
 export function createShapeElement(
@@ -312,9 +447,11 @@ export function createShapeElement(
       return createTriangle(width, height, fill, stroke, strokeWidth)
 
     case 'diamond':
+    case 'diamond4':
       return createDiamond(width, height, fill, stroke, strokeWidth)
 
     case 'pentagon':
+    case 'pentagon5':
       return createPentagon(width, height, fill, stroke, strokeWidth)
 
     case 'hexagon':
@@ -336,8 +473,27 @@ export function createShapeElement(
     case 'donut0':
       return createDonut(width, height, stroke, strokeWidth)
 
+    case 'parallelogram':
+    case 'parallelogram4':
+      return createParallelogram(width, height, fill, stroke, strokeWidth)
+
+    case 'trapezoid':
+    case 'trapezoid4':
+      return createTrapezoid(width, height, fill, stroke, strokeWidth)
+
+    case 'can':
+    case 'can4':
+      return createCan(width, height, fill, stroke, strokeWidth)
+
+    case 'cube':
+    case 'cube4':
+      return createCube(width, height, fill, stroke, strokeWidth)
+
+    case 'circulararrow':
+    case 'circularArrow4':
+      return createCircularArrow(width, height, fill, stroke, strokeWidth)
+
     default:
-      // 不支持的形状，返回null，使用默认渲染
       return null
   }
 }

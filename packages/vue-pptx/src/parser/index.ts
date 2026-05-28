@@ -87,6 +87,9 @@ export class PPTXParser {
       // 解析背景图片
       await this.parseSlideBackground(slide, i + 1)
 
+      // 解析图表数据
+      await this.parseSlideCharts(slide, i + 1)
+
       // 解析 layout 中的元素并合并到幻灯片
       await this.parseLayoutElements(slide, i + 1)
 
@@ -236,6 +239,194 @@ export class PPTXParser {
   }
 
   /**
+   * 解析幻灯片图表数据
+   */
+  private async parseSlideCharts(slide: PPTXSlide, slideIndex: number): Promise<void> {
+    try {
+      const slideRelsPath = `ppt/slides/_rels/slide${slideIndex}.xml.rels`
+      const slideRelsFile = this.zip!.file(slideRelsPath)
+      if (!slideRelsFile) return
+
+      const relsXml = await slideRelsFile.async('string')
+      const parser = new DOMParser()
+      const relsDoc = parser.parseFromString(relsXml, 'text/xml')
+      const relationships = relsDoc.getElementsByTagName('Relationship')
+
+      const relsMap = new Map<string, string>()
+      for (let i = 0; i < relationships.length; i++) {
+        const rel = relationships[i]
+        const id = rel.getAttribute('Id') || ''
+        const target = rel.getAttribute('Target') || ''
+        if (id && target) relsMap.set(id, target)
+      }
+
+      for (const element of slide.elements) {
+        if (element.type !== 'chart') continue
+        const chartEl = element as any
+        const chartRId = chartEl._chartRId
+        if (!chartRId || !relsMap.has(chartRId)) continue
+
+        let chartPath = relsMap.get(chartRId)!
+        if (chartPath.startsWith('../')) chartPath = chartPath.substring(3)
+        else if (!chartPath.startsWith('ppt/')) chartPath = `ppt/slides/${chartPath}`
+
+        const chartFile = this.zip!.file(chartPath)
+        if (!chartFile) continue
+
+        const chartXml = await chartFile.async('string')
+        const chartDoc = parser.parseFromString(chartXml, 'text/xml')
+        this.parseChartXML(chartEl, chartDoc)
+        delete chartEl._chartRId
+      }
+    } catch (e) {
+      // 静默失败
+    }
+  }
+
+  /**
+   * 解析图表 XML 数据
+   */
+  private parseChartXML(chartEl: any, chartDoc: Document): void {
+    try {
+      // 查找图表类型
+      const chartTypes = ['barChart', 'bar3DChart', 'lineChart', 'pieChart', 'doughnutChart', 'areaChart', 'scatterChart']
+      let chartType = 'column'
+
+      const allElements = chartDoc.getElementsByTagName('*')
+      const plotAreaEl = this.findByLocalName(allElements, 'plotArea')
+      if (plotAreaEl) {
+        for (const ct of chartTypes) {
+          const found = this.findByLocalName(allElements, ct)
+          if (found && plotAreaEl.contains(found)) {
+            if (ct === 'barChart') {
+              // 判断是 bar 还是 column（根据 barDir）
+              const barDir = this.findByLocalNameIn(plotAreaEl, 'barDir')
+              chartType = barDir?.getAttribute('val') === 'bar' ? 'bar' : 'column'
+            } else if (ct === 'bar3DChart') chartType = 'bar3d'
+            else if (ct === 'lineChart') chartType = 'line'
+            else if (ct === 'pieChart') chartType = 'pie'
+            else if (ct === 'doughnutChart') chartType = 'doughnut'
+            else if (ct === 'areaChart') chartType = 'area'
+            else if (ct === 'scatterChart') chartType = 'scatter'
+            break
+          }
+        }
+      }
+
+      chartEl.chartType = chartType
+
+      // 解析系列数据
+      const series: any[] = []
+      const serElements: Element[] = []
+      for (let i = 0; i < allElements.length; i++) {
+        if (allElements[i].localName === 'ser') serElements.push(allElements[i])
+      }
+
+      for (const ser of serElements) {
+        const points: any[] = []
+
+        // 获取系列名称
+        const txEl = this.findByLocalNameIn(ser, 'tx')
+        let name = ''
+        if (txEl) {
+          const v = this.findByLocalNameIn(txEl, 'v')
+          name = v?.textContent || ''
+        }
+
+        // 获取数值
+        const valEl = this.findByLocalNameIn(ser, 'val')
+        if (valEl) {
+          const numRef = this.findByLocalNameIn(valEl, 'numRef')
+          if (numRef) {
+            const numCache = this.findByLocalNameIn(numRef, 'numCache')
+            if (numCache) {
+              const ptList: Element[] = []
+              for (let i = 0; i < numCache.children.length; i++) {
+                if (numCache.children[i].localName === 'pt') ptList.push(numCache.children[i])
+              }
+              for (const pt of ptList) {
+                const v = this.findByLocalNameIn(pt, 'v')
+                points.push({ value: parseFloat(v?.textContent || '0') })
+              }
+            }
+          }
+        }
+
+        // 获取颜色
+        const spPr = this.findByLocalNameIn(ser, 'spPr')
+        let color: string | undefined
+        if (spPr) {
+          const solidFill = this.findByLocalNameIn(spPr, 'solidFill')
+          if (solidFill) {
+            const srgbClr = this.findByLocalNameIn(solidFill, 'srgbClr')
+            if (srgbClr) color = '#' + (srgbClr.getAttribute('val') || '')
+            if (!color) {
+              const schemeClr = this.findByLocalNameIn(solidFill, 'schemeClr')
+              if (schemeClr) {
+                const val = schemeClr.getAttribute('val') || ''
+                const fallbackColors: Record<string, string> = {
+                  'accent1': '#4472C4', 'accent2': '#ED7D31', 'accent3': '#A5A5A5',
+                  'accent4': '#FFC000', 'accent5': '#5B9BD5', 'accent6': '#70AD47',
+                }
+                color = (this.theme?.colors?.[val]) || fallbackColors[val] || '#4472C4'
+              }
+            }
+          }
+        }
+
+        if (points.length > 0) {
+          series.push({ name, points, color })
+        }
+      }
+
+      chartEl.series = series
+
+      // 解析分类标签
+      const categories: string[] = []
+      const firstSer = serElements[0]
+      if (firstSer) {
+        const catEl = this.findByLocalNameIn(firstSer, 'cat')
+        if (catEl) {
+          const strRef = this.findByLocalNameIn(catEl, 'strRef')
+          if (strRef) {
+            const strCache = this.findByLocalNameIn(strRef, 'strCache')
+            if (strCache) {
+              for (let i = 0; i < strCache.children.length; i++) {
+                if (strCache.children[i].localName === 'pt') {
+                  const v = this.findByLocalNameIn(strCache.children[i], 'v')
+                  categories.push(v?.textContent || '')
+                }
+              }
+            }
+          }
+        }
+      }
+      if (categories.length > 0) chartEl.categories = categories
+    } catch (e) {
+      console.warn('[PPTX] Failed to parse chart XML:', e)
+    }
+  }
+
+  private findByLocalName(elements: HTMLCollectionOf<Element> | Element[], localName: string): Element | null {
+    for (let i = 0; i < elements.length; i++) {
+      if (elements[i].localName === localName) return elements[i]
+    }
+    return null
+  }
+
+  private findByLocalNameIn(parent: Element, localName: string): Element | null {
+    const all = parent.getElementsByTagName('*')
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].localName === localName && parent.contains(all[i])) return all[i]
+    }
+    // 也检查直接子元素
+    for (let i = 0; i < parent.children.length; i++) {
+      if (parent.children[i].localName === localName) return parent.children[i]
+    }
+    return null
+  }
+
+  /**
    * 解析幻灯片背景图片
    */
   private async parseSlideBackground(slide: PPTXSlide, slideIndex: number): Promise<void> {
@@ -276,7 +467,7 @@ export class PPTXParser {
       const background = await this.parseLayoutBackground(sldLayoutId)
       if (background) {
         slide.background = background
-        console.log('[PPTX] Slide', slideIndex, 'background set:', slide.background.src?.substring(0, 50))
+        console.log('[PPTX] Slide', slideIndex, 'background set:', slide.background?.src?.substring(0, 50))
       }
     } catch (e) {
       // 静默失败，背景图片是可选的
@@ -343,13 +534,13 @@ export class PPTXParser {
       const layoutElements: any[] = []
 
       // 查找所有 p:sp 元素
-      let shapes = spTree.getElementsByTagName('p:sp')
+      let shapes: Element[] | HTMLCollectionOf<Element> = spTree.getElementsByTagName('p:sp')
       if (shapes.length === 0) {
         const allElements = spTree.getElementsByTagName('*')
-        shapes = []
+        shapes = [] as Element[]
         for (let i = 0; i < allElements.length; i++) {
           if (allElements[i].localName === 'sp') {
-            shapes.push(allElements[i])
+            (shapes as Element[]).push(allElements[i])
           }
         }
       }
@@ -486,11 +677,11 @@ export class PPTXParser {
         return color
       }
     } else if (schemeClr) {
-      const val = schemeClr.getAttribute('val')
-      
+      const val = schemeClr.getAttribute('val') || ''
+
       // 优先使用已解析的主题颜色，然后使用默认颜色
       let baseColor = '#ffffff'
-      if (this.theme && this.theme.colors && this.theme.colors[val]) {
+      if (this.theme && this.theme.colors && val && this.theme.colors[val]) {
         baseColor = this.theme.colors[val]
       } else {
         // 后备值
@@ -919,7 +1110,7 @@ export class PPTXParser {
       let blipRelId = ''
 
       // 辅助函数：使用 localName 查找元素
-      const findByLocalName = (parent: Element, localName: string): Element[] => {
+      const findByLocalName = (parent: Element | Document, localName: string): Element[] => {
         const results: Element[] = []
         const allElements = parent.getElementsByTagName('*')
         for (let i = 0; i < allElements.length; i++) {

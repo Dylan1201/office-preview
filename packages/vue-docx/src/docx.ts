@@ -47,23 +47,27 @@ function processPages(docxContainer: HTMLElement): void {
 }
 
 /**
+ * 判断颜色是否为浅灰色调（用于识别引用段落背景）
+ * 提取 RGB 值，当 R/G/B 都在 220-250 之间且互相接近时视为浅灰
+ */
+function isLightGrayColor(color: string): boolean {
+  const match = color.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/)
+  if (!match) return false
+  const r = parseInt(match[1])
+  const g = parseInt(match[2])
+  const b = parseInt(match[3])
+  // 浅灰色：三个通道都在 220-250 之间，且彼此差异不超过 15
+  if (r < 220 || g < 220 || b < 220) return false
+  if (r > 250 || g > 250 || b > 250) return false
+  if (Math.abs(r - g) > 15 || Math.abs(r - b) > 15 || Math.abs(g - b) > 15) return false
+  return true
+}
+
+/**
  * 合并引用段落 - 将相邻的带背景色的段落合并成一个引用框
  */
 function mergeQuoteParagraphs(section: HTMLElement): void {
-  // 查找所有带背景色的段落
-  const quoteParagraphs: HTMLElement[] = []
   const allParagraphs = section.querySelectorAll('p')
-
-  allParagraphs.forEach((p) => {
-    const el = p as HTMLElement
-    const style = el.getAttribute('style') || ''
-    // 查找带 rgb(245, 245, 245) 或 rgb(243, 243, 243) 等浅灰背景的段落
-    if (style.includes('rgb(24') && style.includes('background-color')) {
-      quoteParagraphs.push(el)
-    }
-  })
-
-  if (quoteParagraphs.length === 0) return
 
   // 找出连续的引用段落组
   const groups: HTMLElement[][] = []
@@ -72,7 +76,8 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
   allParagraphs.forEach((p) => {
     const el = p as HTMLElement
     const style = el.getAttribute('style') || ''
-    const isQuote = style.includes('rgb(24') && style.includes('background-color')
+    const bgMatch = style.match(/background-color:\s*([^;]+)/i)
+    const isQuote = bgMatch ? isLightGrayColor(bgMatch[1].trim()) : false
 
     if (isQuote) {
       currentGroup.push(el)
@@ -90,16 +95,14 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
 
   // 合并每组引用段落
   groups.forEach((group) => {
-    if (group.length < 2) return  // 只有1个段落的不需要合并
+    if (group.length < 2) return
     const first = group[0] as HTMLElement
     const parent = first.parentNode
 
     if (!parent) return
 
-    // 获取第一个段落的前一个兄弟节点（在移动段落之前获取）
     const previousSibling = first.previousSibling
 
-    // 创建新的引用框容器
     const quoteContainer = document.createElement('div')
     quoteContainer.className = 'docx-quote-container'
     quoteContainer.style.cssText = `
@@ -113,10 +116,8 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
       margin: 16px 0 !important;
     `
 
-    // 将所有引用段落移到新容器中（这会从原位置移除它们）
     group.forEach((p) => {
       const el = p as HTMLElement
-      // 移除段落原有的背景色，只保留文本
       el.style.backgroundColor = 'transparent'
       el.style.marginTop = '0'
       el.style.marginBottom = '0'
@@ -125,12 +126,9 @@ function mergeQuoteParagraphs(section: HTMLElement): void {
       quoteContainer.appendChild(el)
     })
 
-    // 根据previousSibling插入新容器
     if (previousSibling) {
-      // 有前一个兄弟节点，插入到它之后
       parent.insertBefore(quoteContainer, previousSibling.nextSibling)
     } else {
-      // 没有前一个兄弟节点，插入到父节点的开头
       parent.insertBefore(quoteContainer, parent.firstChild)
     }
   })

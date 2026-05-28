@@ -6,10 +6,42 @@ import type {
   PPTXShapeElement,
   PPTXVideoElement,
   PPTXTableElement,
-  PPTXChartElement
+  PPTXChartElement,
+  PPTXConnectorElement
 } from '../types';
 import { createShapeElement } from './shapes';
 import { renderChart } from './charts';
+
+/**
+ * 应用旋转和翻转到元素
+ */
+function applyTransform(el: HTMLElement, element: PPTXElement): void {
+  const transforms: string[] = []
+  if (element.flipH) transforms.push('scaleX(-1)')
+  if (element.flipV) transforms.push('scaleY(-1)')
+  if (element.rotation) {
+    transforms.push(`rotate(${element.rotation}deg)`)
+  }
+  if (transforms.length > 0) {
+    el.style.transform = transforms.join(' ')
+    // 以元素左上角为中心进行变换
+    el.style.transformOrigin = '0 0'
+  }
+}
+
+/**
+ * 创建渐变CSS字符串
+ */
+function createGradientCSS(gradient: { type: string; colors: Array<{ pos: number; color: string }>; angle?: number }): string {
+  const { type, colors, angle } = gradient
+  if (type === 'linear' && colors.length >= 2) {
+    const colorStops = colors.map((c) => `${c.color} ${c.pos / 1000}%`).join(', ')
+    const cssAngle = (angle || 90) + 90
+    return `linear-gradient(${cssAngle}deg, ${colorStops})`
+  }
+  if (colors.length > 0) return colors[0].color
+  return ''
+}
 
 /**
  * PPTX渲染器
@@ -21,193 +53,199 @@ export class PPTXRenderer {
     this.container = container;
   }
 
-  /**
-   * 渲染幻灯片
-   */
   renderSlide(slide: PPTXSlide): void {
     this.container.innerHTML = '';
     const slideEl = this.createSlideElement(slide);
     this.container.appendChild(slideEl);
   }
 
-  /**
-   * 创建幻灯片元素
-   */
   private createSlideElement(slide: PPTXSlide): HTMLElement {
     const slideEl = document.createElement('div');
     slideEl.className = 'pptx-slide';
     slideEl.style.position = 'relative';
     slideEl.style.width = `${slide.width}px`;
     slideEl.style.height = `${slide.height}px`;
-    slideEl.style.backgroundColor = slide.background?.color || '#ffffff';
     slideEl.style.overflow = 'hidden';
 
-    // 应用背景图片
-    console.log('[PPTX Renderer] Rendering slide with background:', slide.background?.src?.substring(0, 50))
-    if (slide.background?.src) {
-      slideEl.style.backgroundImage = `url('${slide.background.src}')`;
-      slideEl.style.backgroundSize = 'cover';
-      slideEl.style.backgroundPosition = 'center';
-      slideEl.style.backgroundRepeat = 'no-repeat';
-      console.log('[PPTX Renderer] Background style set:', slideEl.style.backgroundImage?.substring(0, 50))
+    // 应用背景
+    const bg = slide.background as any
+    if (bg) {
+      if (bg.src) {
+        slideEl.style.backgroundImage = `url('${bg.src}')`;
+        slideEl.style.backgroundSize = 'cover';
+        slideEl.style.backgroundPosition = 'center';
+        slideEl.style.backgroundRepeat = 'no-repeat';
+      } else if (bg.type === 'gradient' && bg.gradient) {
+        slideEl.style.background = createGradientCSS(bg.gradient)
+      } else if (bg.color) {
+        slideEl.style.backgroundColor = bg.color;
+      } else {
+        slideEl.style.backgroundColor = '#ffffff';
+      }
+    } else {
+      slideEl.style.backgroundColor = '#ffffff';
     }
 
-    // 渲染所有元素
     slide.elements.forEach((element) => {
       const elementEl = this.renderElement(element);
-      if (elementEl) {
-        slideEl.appendChild(elementEl);
-      }
+      if (elementEl) slideEl.appendChild(elementEl);
     });
 
     return slideEl;
   }
 
-  /**
-   * 渲染元素
-   */
   private renderElement(element: PPTXElement): HTMLElement | null {
     switch (element.type) {
-      case 'text':
-        return this.renderTextElement(element as PPTXTextElement);
-      case 'image':
-        return this.renderImageElement(element as PPTXImageElement);
-      case 'shape':
-        return this.renderShapeElement(element as PPTXShapeElement);
-      case 'video':
-        return this.renderVideoElement(element as PPTXVideoElement);
-      case 'table':
-        return this.renderTableElement(element as PPTXTableElement);
-      case 'chart':
-        return this.renderChartElement(element as PPTXChartElement);
-      default:
-        return null;
+      case 'text': return this.renderTextElement(element as PPTXTextElement);
+      case 'image': return this.renderImageElement(element as PPTXImageElement);
+      case 'shape': return this.renderShapeElement(element as PPTXShapeElement);
+      case 'video': return this.renderVideoElement(element as PPTXVideoElement);
+      case 'table': return this.renderTableElement(element as PPTXTableElement);
+      case 'chart': return this.renderChartElement(element as PPTXChartElement);
+      case 'connector': return this.renderConnectorElement(element as PPTXConnectorElement);
+      default: return null;
     }
   }
 
   /**
-   * 渲染文本元素
+   * 渲染文本元素（支持背景形状、多段落、旋转）
    */
   private renderTextElement(element: PPTXTextElement): HTMLElement {
-    const textEl = document.createElement('div');
-    textEl.className = 'pptx-text';
-    textEl.style.position = 'absolute';
-    textEl.style.left = `${element.x}px`;
-    textEl.style.top = `${element.y}px`;
-    textEl.style.width = `${element.width}px`;
-    textEl.style.height = `${element.height}px`;
-    textEl.style.overflow = 'hidden';
+    const el = document.createElement('div');
+    el.className = 'pptx-text';
+    el.style.position = 'absolute';
+    el.style.left = `${element.x}px`;
+    el.style.top = `${element.y}px`;
+    el.style.width = `${element.width}px`;
+    el.style.height = `${element.height}px`;
+    el.style.overflow = 'hidden';
+    el.style.boxSizing = 'border-box';
 
-    // 默认居中对齐
-    textEl.style.display = 'flex';
-    textEl.style.alignItems = 'center';
-    textEl.style.justifyContent = 'center';
+    // 形状背景（文本框的填充/渐变/边框）
+    const textEl = element as any
+    if (textEl.fill || textEl.gradient) {
+      if (textEl.gradient) {
+        el.style.background = createGradientCSS(textEl.gradient)
+      } else if (textEl.fill) {
+        el.style.backgroundColor = textEl.fill;
+      }
+    }
+    if (textEl.stroke) {
+      el.style.border = `${textEl.strokeWidth || 1}px solid ${textEl.stroke}`;
+    }
+    if (textEl.shapeType) {
+      const st = textEl.shapeType.toLowerCase()
+      if (st === 'ellipse' || st === 'oval') el.style.borderRadius = '50%'
+      else if (st === 'roundrectangle' || st === 'roundedrectangle') el.style.borderRadius = '10%'
+    }
 
-    // 应用样式
+    // 垂直对齐
+    const vAlign = textEl.verticalAlign || 'middle'
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.justifyContent = vAlign === 'top' ? 'flex-start' : vAlign === 'bottom' ? 'flex-end' : 'center';
+
+    // 水平对齐
     const style = element.style || {};
-    if (style.fontSize) {
-      textEl.style.fontSize = `${style.fontSize}px`;
-    }
-    if (style.fontFamily) {
-      textEl.style.fontFamily = style.fontFamily;
-    }
-    if (style.bold) {
-      textEl.style.fontWeight = 'bold';
-    }
-    if (style.italic) {
-      textEl.style.fontStyle = 'italic';
-    }
-    if (style.underline) {
-      textEl.style.textDecoration = 'underline';
-    }
-    // 水平对齐：覆盖默认的居中
     if (style.align) {
-      textEl.style.justifyContent =
-        style.align === 'left'
-          ? 'flex-start'
-          : style.align === 'right'
-            ? 'flex-end'
-            : style.align === 'dist' || style.align === 'justify'
-              ? 'space-between'
-              : 'center';
-      textEl.style.textAlign =
-        style.align === 'dist' ? 'justify' : style.align;
-    }
-    // 垂直对齐：覆盖默认的居中
-    if (style.verticalAlign) {
-      textEl.style.alignItems =
-        style.verticalAlign === 'top'
-          ? 'flex-start'
-          : style.verticalAlign === 'bottom'
-            ? 'flex-end'
-            : 'center';
+      el.style.textAlign = (style.align as string) === 'dist' ? 'justify' : style.align
+    } else {
+      el.style.textAlign = 'center'
     }
 
-    // 如果有文本片段（每个片段可能有不同的颜色），则分别渲染
-    if (element.fragments && element.fragments.length > 0) {
-      // 检查是否有不同的颜色或背景色
-      let hasDifferentStyles = false;
-      const firstColor = element.fragments[0]?.color;
-      const firstBgColor = element.fragments[0]?.backgroundColor;
+    // 字体样式
+    if (style.fontSize) el.style.fontSize = `${style.fontSize}px`;
+    if (style.fontFamily) el.style.fontFamily = style.fontFamily;
+    if (style.bold) el.style.fontWeight = 'bold';
+    if (style.italic) el.style.fontStyle = 'italic';
+    if (style.underline) el.style.textDecoration = 'underline';
 
+    // 渲染多段落
+    if (element.paragraphs && element.paragraphs.length > 1) {
+      element.paragraphs.forEach((para) => {
+        const pEl = document.createElement('div')
+        pEl.style.width = '100%'
+
+        // 段落对齐
+        if (para.style?.align) {
+          pEl.style.textAlign = (para.style.align as string) === 'dist' ? 'justify' : para.style.align
+        }
+
+        // 段落字体样式
+        if (para.style?.fontSize) pEl.style.fontSize = `${para.style.fontSize}px`
+        if (para.style?.fontFamily) pEl.style.fontFamily = para.style.fontFamily
+        if (para.style?.bold) pEl.style.fontWeight = 'bold'
+        if (para.style?.italic) pEl.style.fontStyle = 'italic'
+        if (para.style?.underline) pEl.style.textDecoration = 'underline'
+
+        if (para.fragments && para.fragments.length > 0) {
+          para.fragments.forEach(frag => {
+            const span = document.createElement('span')
+            span.textContent = frag.text
+            if (frag.color) span.style.color = frag.color
+            else if (para.style?.color) span.style.color = para.style.color
+            else if (style.color) span.style.color = style.color
+            else span.style.color = '#000000'
+            if (frag.backgroundColor) {
+              span.style.backgroundColor = frag.backgroundColor
+              span.style.padding = '0 2px'
+            }
+            if (frag.fontSize) span.style.fontSize = `${frag.fontSize}px`
+            if (frag.bold) span.style.fontWeight = 'bold'
+            if (frag.italic) span.style.fontStyle = 'italic'
+            if (frag.underline) span.style.textDecoration = 'underline'
+            pEl.appendChild(span)
+          })
+        } else if (para.text) {
+          pEl.textContent = para.text
+          if (para.style?.color) pEl.style.color = para.style.color
+          else if (style.color) pEl.style.color = style.color
+          else pEl.style.color = '#000000'
+        }
+        el.appendChild(pEl)
+      })
+    } else if (element.fragments && element.fragments.length > 0) {
+      // 单段落 - 片段渲染
+      let hasDifferentStyles = false
+      const firstColor = element.fragments[0]?.color
+      const firstBgColor = element.fragments[0]?.backgroundColor
       for (const fragment of element.fragments) {
-        if (
-          fragment.color !== firstColor ||
-          fragment.backgroundColor !== firstBgColor
-        ) {
-          hasDifferentStyles = true;
-          break;
+        if (fragment.color !== firstColor || fragment.backgroundColor !== firstBgColor) {
+          hasDifferentStyles = true; break
         }
       }
 
       if (hasDifferentStyles) {
-        // 每个片段使用span包裹，应用不同的颜色和背景色
-        const fragmentContainer = document.createElement('span');
+        const container = document.createElement('span')
         for (const fragment of element.fragments) {
-          const span = document.createElement('span');
-          span.textContent = fragment.text;
-          if (fragment.color) {
-            span.style.color = fragment.color;
-          } else {
-            span.style.color = style.color || '#000000';
-          }
+          const span = document.createElement('span')
+          span.textContent = fragment.text
+          span.style.color = fragment.color || style.color || '#000000'
           if (fragment.backgroundColor) {
-            span.style.backgroundColor = fragment.backgroundColor;
-            span.style.padding = '0 2px'; // 添加一些内边距让背景色更好看
+            span.style.backgroundColor = fragment.backgroundColor
+            span.style.padding = '0 2px'
           }
-          fragmentContainer.appendChild(span);
+          container.appendChild(span)
         }
-        textEl.appendChild(fragmentContainer);
+        el.appendChild(container)
       } else {
-        // 所有片段样式相同，使用单一样式渲染
-        const color = element.fragments[0]?.color || style.color || '#000000';
-        textEl.style.color = color;
+        el.style.color = element.fragments[0]?.color || style.color || '#000000'
         if (element.fragments[0]?.backgroundColor) {
-          textEl.style.backgroundColor = element.fragments[0].backgroundColor;
-          textEl.style.padding = '0 4px';
+          el.style.backgroundColor = element.fragments[0].backgroundColor
         }
-        if (element.text) {
-          textEl.textContent = element.text;
-        } else {
-          textEl.textContent = '';
-        }
+        el.textContent = element.text || ''
       }
     } else {
-      // 没有片段信息，使用原有逻辑
-      textEl.style.color = style.color || '#000000';
-      if (element.text) {
-        textEl.textContent = element.text;
-      } else {
-        textEl.textContent = '';
-      }
+      el.style.color = style.color || '#000000'
+      el.textContent = element.text || ''
     }
 
-    return textEl;
+    // 旋转和翻转
+    applyTransform(el, element)
+
+    return el
   }
 
-  /**
-   * 渲染图片元素
-   */
   private renderImageElement(element: PPTXImageElement): HTMLElement {
     const imgEl = document.createElement('img');
     imgEl.className = 'pptx-image';
@@ -218,192 +256,68 @@ export class PPTXRenderer {
     imgEl.style.height = `${element.height}px`;
     imgEl.style.objectFit = 'cover';
     imgEl.src = element.src;
-
+    applyTransform(imgEl, element)
     return imgEl;
   }
 
   /**
-   * 渲染形状元素
+   * 渲染形状元素（支持渐变SVG、旋转）
    */
   private renderShapeElement(element: PPTXShapeElement): HTMLElement {
-    // 处理自定义路径形状
+    // 自定义路径形状
     if (element.customPath) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svg.setAttribute('width', element.width.toString())
-      svg.setAttribute('height', element.height.toString())
-      svg.setAttribute('viewBox', `0 0 ${element.width} ${element.height}`)
-      svg.style.display = 'block'
-      svg.style.overflow = 'visible'
-
-      // 创建defs用于渐变
-      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
-
-      // 处理渐变填充
-      if (element.gradient && element.gradient.type === 'linear') {
-        const { colors, angle } = element.gradient
-        if (colors.length >= 2) {
-          const gradientId = `grad-${element.id}`
-
-          // 创建linearGradient
-          const linearGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
-          linearGradient.setAttribute('id', gradientId)
-          linearGradient.setAttribute('gradientUnits', 'userSpaceOnUse')
-
-          // 计算渐变坐标（基于角度）
-          // PPTX角度：0=右, 90=下, 180=左, 270=上
-          // SVG角度需要转换
-          const angleRad = (angle - 90) * Math.PI / 180
-          const cx = element.width / 2
-          const cy = element.height / 2
-          const r = Math.max(element.width, element.height) / 2
-
-          const x1 = cx - r * Math.cos(angleRad)
-          const y1 = cy - r * Math.sin(angleRad)
-          const x2 = cx + r * Math.cos(angleRad)
-          const y2 = cy + r * Math.sin(angleRad)
-
-          linearGradient.setAttribute('x1', x1.toString())
-          linearGradient.setAttribute('y1', y1.toString())
-          linearGradient.setAttribute('x2', x2.toString())
-          linearGradient.setAttribute('y2', y2.toString())
-
-          // 添加颜色停止点
-          colors.forEach(stop => {
-            const stopElem = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
-            stopElem.setAttribute('offset', `${stop.pos / 1000}%`)
-            stopElem.setAttribute('stop-color', stop.color)
-            linearGradient.appendChild(stopElem)
-          })
-
-          defs.appendChild(linearGradient)
-
-          // 设置path的fill引用渐变
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-          path.setAttribute('d', element.customPath)
-          path.setAttribute('fill', `url(#${gradientId})`)
-
-          if (element.stroke) {
-            path.setAttribute('stroke', element.stroke)
-            if (element.strokeWidth) {
-              path.setAttribute('stroke-width', element.strokeWidth.toString())
-            }
-          }
-
-          svg.appendChild(defs)
-          svg.appendChild(path)
-        } else {
-          // 只有一种颜色或无渐变
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-          path.setAttribute('d', element.customPath)
-
-          if (element.fill) {
-            path.setAttribute('fill', element.fill)
-          } else if (colors.length > 0) {
-            path.setAttribute('fill', colors[0].color)
-          } else {
-            path.setAttribute('fill', 'none')
-          }
-
-          if (element.stroke) {
-            path.setAttribute('stroke', element.stroke)
-            if (element.strokeWidth) {
-              path.setAttribute('stroke-width', element.strokeWidth.toString())
-            }
-          }
-
-          svg.appendChild(path)
-        }
-      } else {
-        // 纯色填充
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-        path.setAttribute('d', element.customPath)
-
-        if (element.fill) {
-          path.setAttribute('fill', element.fill)
-        } else {
-          path.setAttribute('fill', 'none')
-        }
-
-        if (element.stroke) {
-          path.setAttribute('stroke', element.stroke)
-          if (element.strokeWidth) {
-            path.setAttribute('stroke-width', element.strokeWidth.toString())
-          }
-        }
-
-        svg.appendChild(path)
-      }
-
-      const container = document.createElement('div')
-      container.className = 'pptx-shape'
-      container.style.position = 'absolute'
-      container.style.left = `${element.x}px`
-      container.style.top = `${element.y}px`
-      container.style.width = `${element.width}px`
-      container.style.height = `${element.height}px`
-
-      // 应用翻转属性到容器
-      if (element.flipH || element.flipV) {
-        const transformValues: string[] = []
-        if (element.flipH) transformValues.push('scaleX(-1)')
-        if (element.flipV) transformValues.push('scaleY(-1)')
-        container.style.transform = transformValues.join(' ')
-      }
-
-      container.appendChild(svg)
-      return container
+      return this.renderCustomPathShape(element)
     }
 
-    // 尝试使用SVG渲染复杂形状
+    // SVG 渲染
     if (element.shapeType) {
-      const svgElement = createShapeElement(
-        element.shapeType,
-        element.width,
-        element.height,
-        element.fill,
-        element.stroke,
-        element.strokeWidth
-      );
-
-      if (svgElement) {
-        // SVG渲染成功，包装在容器中
-        const container = document.createElement('div');
-        container.className = 'pptx-shape';
-        container.style.position = 'absolute';
-        container.style.left = `${element.x}px`;
-        container.style.top = `${element.y}px`;
-        container.style.width = `${element.width}px`;
-        container.style.height = `${element.height}px`;
-
-        // 应用翻转属性到容器
-        if (element.flipH || element.flipV) {
-          const transformValues: string[] = [];
-          if (element.flipH) transformValues.push('scaleX(-1)');
-          if (element.flipV) transformValues.push('scaleY(-1)');
-          container.style.transform = transformValues.join(' ');
+      const svgEl = createShapeElement(
+        element.shapeType, element.width, element.height,
+        element.fill, element.stroke, element.strokeWidth
+      )
+      if (svgEl) {
+        // 如果有渐变，替换 SVG 中的 fill
+        if (element.gradient && element.gradient.type === 'linear' && element.gradient.colors.length >= 2) {
+          const paths = svgEl.querySelectorAll('path, ellipse, rect, circle, polygon')
+          if (paths.length > 0) {
+            const gradId = `grad-${element.id}`
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+            const lg = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+            lg.setAttribute('id', gradId)
+            lg.setAttribute('gradientUnits', 'userSpaceOnUse')
+            const { angle, colors } = element.gradient
+            const angleRad = (angle || 0) * Math.PI / 180
+            const cx = element.width / 2, cy = element.height / 2
+            const r = Math.max(element.width, element.height) / 2
+            lg.setAttribute('x1', (cx - r * Math.cos(angleRad)).toString())
+            lg.setAttribute('y1', (cy - r * Math.sin(angleRad)).toString())
+            lg.setAttribute('x2', (cx + r * Math.cos(angleRad)).toString())
+            lg.setAttribute('y2', (cy + r * Math.sin(angleRad)).toString())
+            colors.forEach(s => {
+              const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
+              stop.setAttribute('offset', `${s.pos / 1000}%`)
+              stop.setAttribute('stop-color', s.color)
+              lg.appendChild(stop)
+            })
+            defs.appendChild(lg)
+            svgEl.insertBefore(defs, svgEl.firstChild)
+            paths.forEach(p => p.setAttribute('fill', `url(#${gradId})`))
+          }
         }
-
-        container.appendChild(svgElement);
-        return container;
+        const container = document.createElement('div')
+        container.className = 'pptx-shape'
+        container.style.position = 'absolute'
+        container.style.left = `${element.x}px`
+        container.style.top = `${element.y}px`
+        container.style.width = `${element.width}px`
+        container.style.height = `${element.height}px`
+        container.appendChild(svgEl)
+        applyTransform(container, element)
+        return container
       }
     }
 
-    // 回退到原有的CSS渲染方式（用于简单形状）
-    // 预先检测是否为圆环，用于位置调整
-    const isDonutCandidate =
-      element.shapeType === 'ellipse' ||
-      element.shapeType === 'oval' ||
-      element.shapeType === 'custom';
-    const hasNoFill = !element.fill && !element.gradient;
-    const hasStroke = !!element.stroke;
-    let isDonut = isDonutCandidate && hasNoFill && hasStroke;
-
-    // 圆环的border宽度（用于位置补偿）
-    let borderWidth =
-      isDonut && element.strokeWidth && element.strokeWidth > 0
-        ? element.strokeWidth
-        : 0;
-
+    // CSS 回退渲染
     const shapeEl = document.createElement('div');
     shapeEl.className = 'pptx-shape';
     shapeEl.style.position = 'absolute';
@@ -412,83 +326,167 @@ export class PPTXRenderer {
     shapeEl.style.width = `${element.width}px`;
     shapeEl.style.height = `${element.height}px`;
 
-    // 应用翻转属性
-    if (element.flipH || element.flipV) {
-      const transformValues: string[] = [];
-      if (element.flipH) transformValues.push('scaleX(-1)');
-      if (element.flipV) transformValues.push('scaleY(-1)');
-      shapeEl.style.transform = transformValues.join(' ');
-    }
-
-    // 根据形状类型应用对应的样式
+    // 形状类型
     if (element.shapeType) {
-      const shapeType = element.shapeType.toLowerCase();
-      // 圆形或椭圆形需要圆角
-      if (shapeType === 'ellipse' || shapeType === 'oval') {
-        shapeEl.style.borderRadius = '50%';
-      } else if (
-        shapeType === 'roundRectangle' ||
-        shapeType === 'roundedRectangle'
-      ) {
-        shapeEl.style.borderRadius = '10%';
-      } else if (shapeType === 'custom') {
-        // 自定义几何形状，可能是圆环等复杂形状
-        shapeEl.style.borderRadius = '50%';
-        isDonut = true;
-      }
+      const st = element.shapeType.toLowerCase()
+      if (st === 'ellipse' || st === 'oval') shapeEl.style.borderRadius = '50%'
+      else if (st === 'roundrectangle' || st === 'roundedrectangle') shapeEl.style.borderRadius = '10%'
+      else if (st === 'custom') shapeEl.style.borderRadius = '50%'
     }
 
-    // 应用渐变或纯色填充
+    // 圆环检测
+    const isDonutCandidate = element.shapeType === 'ellipse' || element.shapeType === 'oval' || element.shapeType === 'custom'
+    const isDonut = isDonutCandidate && !element.fill && !element.gradient && !!element.stroke
+
     if (isDonut && element.stroke) {
-      // 圆环：使用边框实现
-      // 优先使用实际解析的strokeWidth，只在无效时才使用尺寸的1/8作为后备
-      if (element.strokeWidth && element.strokeWidth > 0) {
-        borderWidth = element.strokeWidth;
-      } else {
-        borderWidth = Math.max(1, Math.min(element.width, element.height) / 8);
-      }
-
-      // 圆环：使用 content-box，border 向外扩展
-      // 为保持外径和填充圆相同，需要向内收缩内容尺寸
-      // 因为 border 会向外扩展 borderWidth * 2，所以内容尺寸要减小 borderWidth * 2
-      const donutContentWidth = element.width - borderWidth * 2;
-      const donutContentHeight = element.height - borderWidth * 2;
-
-      shapeEl.style.left = `${element.x}px`;
-      shapeEl.style.top = `${element.y}px`;
-      shapeEl.style.width = `${donutContentWidth}px`;
-      shapeEl.style.height = `${donutContentHeight}px`;
-      shapeEl.style.border = `${borderWidth}px solid ${element.stroke}`;
-      shapeEl.style.backgroundColor = 'transparent';
+      const bw = element.strokeWidth && element.strokeWidth > 0 ? element.strokeWidth : Math.max(1, Math.min(element.width, element.height) / 8)
+      shapeEl.style.width = `${element.width - bw * 2}px`
+      shapeEl.style.height = `${element.height - bw * 2}px`
+      shapeEl.style.border = `${bw}px solid ${element.stroke}`
     } else if (element.gradient) {
-      const { type, colors, angle } = element.gradient;
-      if (type === 'linear' && colors.length >= 2) {
-        // 创建CSS线性渐变
-        const colorStops = colors
-          .map((c) => `${c.color} ${c.pos / 1000}%`)
-          .join(', ');
-        // 转换角度：PPTX角度需要调整以匹配CSS
-        const cssAngle = (angle || 90) + 90;
-        shapeEl.style.background = `linear-gradient(${cssAngle}deg, ${colorStops})`;
-      } else if (colors.length > 0) {
-        // 只有一种颜色，使用纯色
-        shapeEl.style.backgroundColor = colors[0].color;
-      }
+      shapeEl.style.background = createGradientCSS(element.gradient)
     } else if (element.fill) {
       shapeEl.style.backgroundColor = element.fill;
     }
 
-    // 如果不是圆环，单独应用描边
     if (!isDonut && element.stroke) {
       shapeEl.style.border = `${element.strokeWidth || 1}px solid ${element.stroke}`;
     }
 
-    return shapeEl;
+    applyTransform(shapeEl, element)
+    return shapeEl
+  }
+
+  private renderCustomPathShape(element: PPTXShapeElement): HTMLElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('width', element.width.toString())
+    svg.setAttribute('height', element.height.toString())
+    svg.setAttribute('viewBox', `0 0 ${element.width} ${element.height}`)
+    svg.style.display = 'block'
+    svg.style.overflow = 'visible'
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', element.customPath!)
+
+    if (element.gradient && element.gradient.type === 'linear' && element.gradient.colors.length >= 2) {
+      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+      const gradId = `grad-${element.id}`
+      const lg = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+      lg.setAttribute('id', gradId)
+      lg.setAttribute('gradientUnits', 'userSpaceOnUse')
+      const { angle, colors } = element.gradient
+      const angleRad = ((angle || 0) - 90) * Math.PI / 180
+      const cx = element.width / 2, cy = element.height / 2
+      const r = Math.max(element.width, element.height) / 2
+      lg.setAttribute('x1', (cx - r * Math.cos(angleRad)).toString())
+      lg.setAttribute('y1', (cy - r * Math.sin(angleRad)).toString())
+      lg.setAttribute('x2', (cx + r * Math.cos(angleRad)).toString())
+      lg.setAttribute('y2', (cy + r * Math.sin(angleRad)).toString())
+      colors.forEach(s => {
+        const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
+        stop.setAttribute('offset', `${s.pos / 1000}%`)
+        stop.setAttribute('stop-color', s.color)
+        lg.appendChild(stop)
+      })
+      defs.appendChild(lg)
+      svg.appendChild(defs)
+      path.setAttribute('fill', `url(#${gradId})`)
+    } else if (element.fill) {
+      path.setAttribute('fill', element.fill)
+    } else {
+      path.setAttribute('fill', 'none')
+    }
+
+    if (element.stroke) {
+      path.setAttribute('stroke', element.stroke)
+      if (element.strokeWidth) path.setAttribute('stroke-width', element.strokeWidth.toString())
+    }
+
+    svg.appendChild(path)
+
+    const container = document.createElement('div')
+    container.className = 'pptx-shape'
+    container.style.position = 'absolute'
+    container.style.left = `${element.x}px`
+    container.style.top = `${element.y}px`
+    container.style.width = `${element.width}px`
+    container.style.height = `${element.height}px`
+    container.appendChild(svg)
+    applyTransform(container, element)
+    return container
   }
 
   /**
-   * 渲染视频元素
+   * 渲染连接线/线条元素
    */
+  private renderConnectorElement(element: PPTXConnectorElement): HTMLElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('width', element.width.toString())
+    svg.setAttribute('height', element.height.toString())
+    svg.setAttribute('viewBox', `0 0 ${element.width} ${element.height}`)
+    svg.style.display = 'block'
+    svg.style.overflow = 'visible'
+
+    // 线条
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+    const p0 = element.points[0] || { x: 0, y: element.height / 2 }
+    const p1 = element.points[1] || { x: element.width, y: element.height / 2 }
+
+    // 使用元素的实际坐标（已经过EMU到像素转换）
+    line.setAttribute('x1', p0.x.toString())
+    line.setAttribute('y1', p0.y.toString())
+    line.setAttribute('x2', p1.x.toString())
+    line.setAttribute('y2', p1.y.toString())
+    line.setAttribute('stroke', element.stroke || '#000000')
+    line.setAttribute('stroke-width', (element.strokeWidth || 1).toString())
+
+    // 虚线样式
+    if (element.dashStyle === 'dash') line.setAttribute('stroke-dasharray', '8,4')
+    else if (element.dashStyle === 'dot') line.setAttribute('stroke-dasharray', '2,4')
+    else if (element.dashStyle === 'dashDot') line.setAttribute('stroke-dasharray', '8,4,2,4')
+
+    svg.appendChild(line)
+
+    // 箭头（简单三角形）
+    if (element.headEnd && element.headEnd !== 'none') {
+      this.addArrowMarker(svg, p0, p1, element.headEnd!, element.stroke || '#000000')
+    }
+    if (element.tailEnd && element.tailEnd !== 'none') {
+      this.addArrowMarker(svg, p1, p0, element.tailEnd!, element.stroke || '#000000')
+    }
+
+    const container = document.createElement('div')
+    container.className = 'pptx-connector'
+    container.style.position = 'absolute'
+    container.style.left = `${element.x}px`
+    container.style.top = `${element.y}px`
+    container.style.width = `${element.width}px`
+    container.style.height = `${element.height}px`
+    container.appendChild(svg)
+    applyTransform(container, element)
+    return container
+  }
+
+  /**
+   * 添加箭头标记
+   */
+  private addArrowMarker(svg: SVGElement, from: { x: number; y: number }, to: { x: number; y: number }, _type: string, color: string): void {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x)
+    const size = 10
+    const tipX = to.x
+    const tipY = to.y
+
+    const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon')
+    const p1x = tipX - size * Math.cos(angle - Math.PI / 6)
+    const p1y = tipY - size * Math.sin(angle - Math.PI / 6)
+    const p2x = tipX - size * Math.cos(angle + Math.PI / 6)
+    const p2y = tipY - size * Math.sin(angle + Math.PI / 6)
+
+    polygon.setAttribute('points', `${tipX},${tipY} ${p1x},${p1y} ${p2x},${p2y}`)
+    polygon.setAttribute('fill', color)
+    svg.appendChild(polygon)
+  }
+
   private renderVideoElement(element: PPTXVideoElement): HTMLElement {
     const videoContainer = document.createElement('div');
     videoContainer.className = 'pptx-video-container';
@@ -508,22 +506,13 @@ export class PPTXRenderer {
     videoEl.controls = true;
     videoEl.preload = 'metadata';
 
-    if (element.src) {
-      videoEl.src = element.src;
-    }
-
-    if (element.poster) {
-      videoEl.poster = element.poster;
-    }
+    if (element.src) videoEl.src = element.src;
+    if (element.poster) videoEl.poster = element.poster;
 
     videoContainer.appendChild(videoEl);
-
     return videoContainer;
   }
 
-  /**
-   * 渲染表格元素
-   */
   private renderTableElement(element: PPTXTableElement): HTMLElement {
     const tableContainer = document.createElement('div');
     tableContainer.className = 'pptx-table-container';
@@ -540,94 +529,50 @@ export class PPTXRenderer {
     table.style.borderCollapse = 'collapse';
     table.style.backgroundColor = '#fff';
 
-    // 解析表格样式（斑马纹等）
     const tableStyle = element.tableStyle || {};
 
     element.rows.forEach((row, rowIndex) => {
       const tr = document.createElement('tr');
+      if (row.height) tr.style.height = `${row.height}px`;
 
-      // 应用行高
-      if (row.height) {
-        tr.style.height = `${row.height}px`;
-      }
-
-      // 应用行样式（斑马纹）
       const isBand1 = rowIndex % 2 === 0;
       const isBand2 = rowIndex % 2 === 1;
-
-      if (isBand1 && tableStyle.band1H) {
-        this.applyCellStyle(tr, tableStyle.band1H);
-      } else if (isBand2 && tableStyle.band2H) {
-        this.applyCellStyle(tr, tableStyle.band2H);
-      }
-
-      // 首行样式
-      if (rowIndex === 0 && tableStyle.firstRow) {
-        this.applyCellStyle(tr, tableStyle.firstRow);
-      }
-
-      // 末行样式
-      if (rowIndex === element.rows.length - 1 && tableStyle.lastRow) {
-        this.applyCellStyle(tr, tableStyle.lastRow);
-      }
+      if (isBand1 && tableStyle.band1H) this.applyCellStyle(tr, tableStyle.band1H);
+      else if (isBand2 && tableStyle.band2H) this.applyCellStyle(tr, tableStyle.band2H);
+      if (rowIndex === 0 && tableStyle.firstRow) this.applyCellStyle(tr, tableStyle.firstRow);
+      if (rowIndex === element.rows.length - 1 && tableStyle.lastRow) this.applyCellStyle(tr, tableStyle.lastRow);
 
       row.cells.forEach((cell, cellIndex) => {
         const td = document.createElement('td');
+        if (cell.rowSpan) td.rowSpan = cell.rowSpan;
+        if (cell.colSpan) td.colSpan = cell.colSpan;
+        if (cell.style) this.applyCellStyle(td, cell.style);
 
-        // 合并单元格
-        if (cell.rowSpan) {
-          td.rowSpan = cell.rowSpan;
-        }
-        if (cell.colSpan) {
-          td.colSpan = cell.colSpan;
-        }
+        if (cellIndex === 0 && tableStyle.firstCol) this.applyCellStyle(td, tableStyle.firstCol);
+        else if (cellIndex === row.cells.length - 1 && tableStyle.lastCol) this.applyCellStyle(td, tableStyle.lastCol);
+        else if (cellIndex % 2 === 0 && tableStyle.band1V) this.applyCellStyle(td, tableStyle.band1V);
+        else if (cellIndex % 2 === 1 && tableStyle.band2V) this.applyCellStyle(td, tableStyle.band2V);
 
-        // 应用单元格样式
-        if (cell.style) {
-          this.applyCellStyle(td, cell.style);
-        }
-
-        // 应用列样式（首列、末列、斑马纹）
-        if (cellIndex === 0 && tableStyle.firstCol) {
-          this.applyCellStyle(td, tableStyle.firstCol);
-        } else if (cellIndex === row.cells.length - 1 && tableStyle.lastCol) {
-          this.applyCellStyle(td, tableStyle.lastCol);
-        } else if (cellIndex % 2 === 0 && tableStyle.band1V) {
-          this.applyCellStyle(td, tableStyle.band1V);
-        } else if (cellIndex % 2 === 1 && tableStyle.band2V) {
-          this.applyCellStyle(td, tableStyle.band2V);
-        }
-
-        // 单元格内容
         if (cell.fragments && cell.fragments.length > 0) {
-          // 使用片段渲染
-          const fragmentContainer = document.createElement('span');
-          cell.fragments.forEach((fragment) => {
+          const fc = document.createElement('span');
+          cell.fragments.forEach((frag) => {
             const span = document.createElement('span');
-            span.textContent = fragment.text;
-            if (fragment.color) {
-              span.style.color = fragment.color;
-            }
-            if (fragment.backgroundColor) {
-              span.style.backgroundColor = fragment.backgroundColor;
-              span.style.padding = '0 2px';
-            }
-            fragmentContainer.appendChild(span);
+            span.textContent = frag.text;
+            if (frag.color) span.style.color = frag.color;
+            if (frag.backgroundColor) { span.style.backgroundColor = frag.backgroundColor; span.style.padding = '0 2px'; }
+            fc.appendChild(span);
           });
-          td.appendChild(fragmentContainer);
+          td.appendChild(fc);
         } else if (cell.text) {
           td.textContent = cell.text;
         }
 
-        // 默认单元格样式
         td.style.padding = '4px 8px';
         td.style.border = '1px solid #ddd';
         td.style.textAlign = 'left';
         td.style.verticalAlign = 'middle';
-
         tr.appendChild(td);
       });
-
       table.appendChild(tr);
     });
 
@@ -635,60 +580,27 @@ export class PPTXRenderer {
     return tableContainer;
   }
 
-  /**
-   * 应用单元格样式
-   */
   private applyCellStyle(element: HTMLElement, style: any): void {
     if (!style) return;
-
-    if (style.backgroundColor) {
-      element.style.backgroundColor = style.backgroundColor;
-    }
-    if (style.color) {
-      element.style.color = style.color;
-    }
-    if (style.fontSize) {
-      element.style.fontSize = `${style.fontSize}px`;
-    }
-    if (style.fontFamily) {
-      element.style.fontFamily = style.fontFamily;
-    }
-    if (style.bold) {
-      element.style.fontWeight = 'bold';
-    }
-    if (style.italic) {
-      element.style.fontStyle = 'italic';
-    }
-    if (style.align) {
-      element.style.textAlign = style.align;
-    }
-    if (style.verticalAlign) {
-      element.style.verticalAlign = style.verticalAlign;
-    }
+    if (style.backgroundColor) element.style.backgroundColor = style.backgroundColor;
+    if (style.color) element.style.color = style.color;
+    if (style.fontSize) element.style.fontSize = `${style.fontSize}px`;
+    if (style.fontFamily) element.style.fontFamily = style.fontFamily;
+    if (style.bold) element.style.fontWeight = 'bold';
+    if (style.italic) element.style.fontStyle = 'italic';
+    if (style.align) element.style.textAlign = style.align;
+    if (style.verticalAlign) element.style.verticalAlign = style.verticalAlign;
     if (style.border) {
-      if (style.border.top) {
-        element.style.borderTop = `1px solid ${style.border.top}`;
-      }
-      if (style.border.right) {
-        element.style.borderRight = `1px solid ${style.border.right}`;
-      }
-      if (style.border.bottom) {
-        element.style.borderBottom = `1px solid ${style.border.bottom}`;
-      }
-      if (style.border.left) {
-        element.style.borderLeft = `1px solid ${style.border.left}`;
-      }
+      if (style.border.top) element.style.borderTop = `1px solid ${style.border.top}`;
+      if (style.border.right) element.style.borderRight = `1px solid ${style.border.right}`;
+      if (style.border.bottom) element.style.borderBottom = `1px solid ${style.border.bottom}`;
+      if (style.border.left) element.style.borderLeft = `1px solid ${style.border.left}`;
     }
   }
 
-  /**
-   * 渲染图表元素
-   */
   private renderChartElement(element: PPTXChartElement): HTMLElement | null {
     const svgElement = renderChart(element);
-
     if (!svgElement) {
-      // 不支持的图表类型，显示占位符
       const placeholder = document.createElement('div');
       placeholder.className = 'pptx-chart-placeholder';
       placeholder.style.position = 'absolute';
@@ -703,12 +615,10 @@ export class PPTXRenderer {
       placeholder.style.border = '1px dashed #ccc';
       placeholder.style.color = '#666';
       placeholder.style.fontSize = '14px';
-      placeholder.textContent = `图表类型: ${element.chartType}`;
-
+      placeholder.textContent = `图表: ${element.chartType}`;
       return placeholder;
     }
 
-    // 包装SVG在容器中
     const container = document.createElement('div');
     container.className = 'pptx-chart';
     container.style.position = 'absolute';
@@ -717,7 +627,6 @@ export class PPTXRenderer {
     container.style.width = `${element.width}px`;
     container.style.height = `${element.height}px`;
     container.appendChild(svgElement);
-
     return container;
   }
 }

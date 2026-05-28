@@ -37,7 +37,7 @@ export interface PptxEmits {
 /**
  * PPTX幻灯片元素类型
  */
-export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group' | 'video'
+export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group' | 'video' | 'connector'
 
 /**
  * PPTX元素基类
@@ -51,6 +51,8 @@ export interface PPTXElement {
   height: number
   rotation?: number
   zIndex?: number
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /**
@@ -60,6 +62,20 @@ export interface PPTXTextFragment {
   text: string
   color?: string
   backgroundColor?: string
+  fontSize?: number
+  fontFamily?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+}
+
+/**
+ * 文本段落
+ */
+export interface PPTXParagraph {
+  text: string
+  fragments?: PPTXTextFragment[]
+  style: PPTXTextStyle
 }
 
 /**
@@ -68,8 +84,20 @@ export interface PPTXTextFragment {
 export interface PPTXTextElement extends PPTXElement {
   type: 'text'
   text: string // 保留完整文本作为fallback
-  fragments?: PPTXTextFragment[] // 文本片段数组，支持每个片段不同颜色
+  fragments?: PPTXTextFragment[] // 文本片段数组（第一段落，向后兼容）
+  paragraphs?: PPTXParagraph[] // 所有段落
   style: PPTXTextStyle
+  verticalAlign?: 'top' | 'middle' | 'bottom' // 来自 bodyPr anchor
+  // 形状视觉属性（文本框带有背景时）
+  shapeType?: string
+  fill?: string
+  gradient?: {
+    type: 'linear' | 'solid'
+    colors: Array<{ pos: number; color: string }>
+    angle?: number
+  }
+  stroke?: string
+  strokeWidth?: number
 }
 
 /**
@@ -214,10 +242,25 @@ export interface PPTXChartSeries {
  */
 export interface PPTXChartElement extends PPTXElement {
   type: 'chart'
-  chartType: 'column' | 'bar' | 'line' | 'pie' | 'doughnut' | 'area' | 'scatter'
+  chartType: 'column' | 'bar' | 'line' | 'pie' | 'doughnut' | 'area' | 'scatter' | 'bar3d' | 'surface'
   title?: string
   series: PPTXChartSeries[]
+  categories?: string[]
   showLegend?: boolean
+}
+
+/**
+ * 连接线/线条元素
+ */
+export interface PPTXConnectorElement extends PPTXElement {
+  type: 'connector'
+  connectorType: 'straight' | 'curved' | 'bent' | 'elbow'
+  points: Array<{ x: number; y: number }>
+  stroke?: string
+  strokeWidth?: number
+  dashStyle?: 'solid' | 'dash' | 'dot' | 'dashDot' | 'dashDotDot' | 'lgDash'
+  headEnd?: 'none' | 'triangle' | 'arrow' | 'oval' | 'diamond'
+  tailEnd?: 'none' | 'triangle' | 'arrow' | 'oval' | 'diamond'
 }
 
 /**
