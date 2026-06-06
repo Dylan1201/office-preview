@@ -24,8 +24,7 @@ function applyTransform(el: HTMLElement, element: PPTXElement): void {
   }
   if (transforms.length > 0) {
     el.style.transform = transforms.join(' ')
-    // 以元素左上角为中心进行变换
-    el.style.transformOrigin = '0 0'
+    el.style.transformOrigin = 'center center'
   }
 }
 
@@ -247,17 +246,40 @@ export class PPTXRenderer {
   }
 
   private renderImageElement(element: PPTXImageElement): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'pptx-image';
+    container.style.position = 'absolute';
+    container.style.left = `${element.x}px`;
+    container.style.top = `${element.y}px`;
+    container.style.width = `${element.width}px`;
+    container.style.height = `${element.height}px`;
+    container.style.overflow = 'hidden';
+
     const imgEl = document.createElement('img');
-    imgEl.className = 'pptx-image';
-    imgEl.style.position = 'absolute';
-    imgEl.style.left = `${element.x}px`;
-    imgEl.style.top = `${element.y}px`;
-    imgEl.style.width = `${element.width}px`;
-    imgEl.style.height = `${element.height}px`;
-    imgEl.style.objectFit = 'cover';
     imgEl.src = element.src;
-    applyTransform(imgEl, element)
-    return imgEl;
+    imgEl.draggable = false;
+    imgEl.style.position = 'absolute';
+
+    const crop = element.crop;
+    if (crop && (crop.left || crop.top || crop.right || crop.bottom)) {
+      const visibleWidth = Math.max(1, 100 - crop.left - crop.right);
+      const visibleHeight = Math.max(1, 100 - crop.top - crop.bottom);
+      imgEl.style.left = `${-(crop.left / visibleWidth) * 100}%`;
+      imgEl.style.top = `${-(crop.top / visibleHeight) * 100}%`;
+      imgEl.style.width = `${(100 / visibleWidth) * 100}%`;
+      imgEl.style.height = `${(100 / visibleHeight) * 100}%`;
+      imgEl.style.objectFit = 'fill';
+    } else {
+      imgEl.style.left = '0';
+      imgEl.style.top = '0';
+      imgEl.style.width = '100%';
+      imgEl.style.height = '100%';
+      imgEl.style.objectFit = element.fit || 'fill';
+    }
+
+    container.appendChild(imgEl);
+    applyTransform(container, element)
+    return container;
   }
 
   /**

@@ -46,150 +46,25 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
     }
   }
 
-  // 尝试多种方式查找 shapes
-  let shapes: Element[] = Array.from(spTree.getElementsByTagName('p:sp'))
-  if (shapes.length === 0) {
-    shapes = Array.from(spTree.getElementsByTagName('sp'))
-  }
-  if (shapes.length === 0) {
-    // 使用 localName 查找
-    const allSp = spTree.getElementsByTagName('*')
-    shapes = []
-    for (let i = 0; i < allSp.length; i++) {
-      if (allSp[i].localName === 'sp') {
-        shapes.push(allSp[i])
-      }
+  for (const child of getDirectElementChildren(spTree)) {
+    const parsed = parseDrawableElement(child, theme)
+    if (Array.isArray(parsed)) {
+      elements.push(...parsed)
+    } else if (parsed) {
+      elements.push(parsed)
     }
   }
 
-  console.log(`[PPTX Parser] Found ${shapes.length} shapes in slide`)
-  for (let i = 0; i < shapes.length; i++) {
-    const element = parseShape(shapes[i], theme)
-    if (element) {
-      elements.push(element)
-      console.log(`  [Shape ${i}] type: ${element.type}, id: ${element.id}`)
-    } else {
-      console.log(`  [Shape ${i}] skipped (null result)`)
-    }
-  }
-
-  // 尝试多种方式查找 pictures
-  let pics: Element[] = Array.from(spTree.getElementsByTagName('p:pic'))
-  if (pics.length === 0) {
-    pics = Array.from(spTree.getElementsByTagName('pic'))
-  }
-  if (pics.length === 0) {
-    // 使用 localName 查找
-    const allPic = spTree.getElementsByTagName('*')
-    pics = []
-    for (let i = 0; i < allPic.length; i++) {
-      if (allPic[i].localName === 'pic') {
-        pics.push(allPic[i])
-      }
-    }
-  }
-
-  console.log(`[PPTX Parser] Found ${pics.length} pictures in slide`)
-  for (let i = 0; i < pics.length; i++) {
-    // 检测是否为视频元素
-    if (isVideoElement(pics[i])) {
-      const element = parseVideoElement(pics[i], theme)
-      if (element) {
-        elements.push(element)
-        console.log(`  [Video ${i}] id: ${element.id}`)
-      }
-    } else {
-      const element = parsePicture(pics[i], theme)
-      if (element) {
-        elements.push(element)
-        console.log(`  [Picture ${i}] id: ${element.id}`)
-      }
-    }
-  }
-
-  // 尝试多种方式查找 group shapes
-  let grpSps = spTree.getElementsByTagName('p:grpSp')
-  if (grpSps.length === 0) {
-    grpSps = spTree.getElementsByTagName('grpSp')
-  }
-
-  for (let i = 0; i < grpSps.length; i++) {
-    const groupElements = parseGroupShape(grpSps[i], theme)
-    elements.push(...groupElements)
-  }
-
-  // 尝试查找表格元素 (graphicFrame)
-  let graphicFrames = spTree.getElementsByTagName('p:graphicFrame')
-  if (graphicFrames.length === 0) {
-    graphicFrames = spTree.getElementsByTagName('graphicFrame')
-  }
-  if (graphicFrames.length === 0) {
-    // 使用 localName 查找
-    const allChildren = spTree.getElementsByTagName('*')
-    const gfList: Element[] = []
-    for (let i = 0; i < allChildren.length; i++) {
-      if (allChildren[i].localName === 'graphicFrame') {
-        gfList.push(allChildren[i])
-      }
-    }
-    graphicFrames = gfList as any
-  }
-
-  console.log(`[PPTX Parser] Found ${graphicFrames.length} graphicFrames in slide`)
-  for (let i = 0; i < graphicFrames.length; i++) {
-    // 检查是图表还是表格
-    const chartElement = parseChartFromGraphicFrame(graphicFrames[i])
-    if (chartElement) {
-      elements.push(chartElement)
-      console.log(`  [Chart ${i}] id: ${chartElement.id}`)
-      continue
-    }
-    const tableElement = parseTable(graphicFrames[i], theme)
-    if (tableElement) {
-      elements.push(tableElement)
-      console.log(`  [Table ${i}] id: ${tableElement.id}`)
-    }
-  }
-
-  // 尝试查找连接线/线条 (p:cxnSp)
-  let cxnSps: Element[] = Array.from(spTree.getElementsByTagName('p:cxnSp'))
-  if (cxnSps.length === 0) {
-    cxnSps = Array.from(spTree.getElementsByTagName('cxnSp'))
-  }
-  if (cxnSps.length === 0) {
-    const allCxn = spTree.getElementsByTagName('*')
-    cxnSps = []
-    for (let i = 0; i < allCxn.length; i++) {
-      if (allCxn[i].localName === 'cxnSp') {
-        cxnSps.push(allCxn[i])
-      }
-    }
-  }
-
-  console.log(`[PPTX Parser] Found ${cxnSps.length} connectors in slide`)
-  for (let i = 0; i < cxnSps.length; i++) {
-    const element = parseConnector(cxnSps[i])
-    if (element) {
-      elements.push(element)
-      console.log(`  [Connector ${i}] id: ${element.id}`)
-    }
-  }
-
-  // 解析幻灯片直接背景 (p:bg)
-  let background: any = undefined
-  const slideBg = parseSlideBackground(doc, theme)
-  if (slideBg) {
-    background = slideBg
-  }
-
+  const orderedSlideBg = parseSlideBackground(doc, theme)
   return {
     id: `slide-${index}`,
     index,
     elements,
     width,
     height,
-    ...(background ? { background } : {})
+    ...(orderedSlideBg ? { background: orderedSlideBg } : {})
   }
+
 }
 
 /**
@@ -198,6 +73,27 @@ export function parseSlideXML(xmlString: string, index: number, theme: any, widt
 function findChildByLocalName(parent: Element, localName: string): Element | null {
   for (let i = 0; i < parent.children.length; i++) {
     if (parent.children[i].localName === localName) return parent.children[i]
+  }
+  return null
+}
+
+function getDirectElementChildren(parent: Element): Element[] {
+  const children: Element[] = []
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const node = parent.childNodes[i]
+    if (node.nodeType === 1) children.push(node as Element)
+  }
+  return children
+}
+
+function parseDrawableElement(element: Element, theme: any): PPTXElement | PPTXElement[] | null {
+  const localName = element.localName || element.tagName.replace(/^.*:/, '')
+  if (localName === 'sp') return parseShape(element, theme)
+  if (localName === 'pic') return isVideoElement(element) ? parseVideoElement(element, theme) : parsePicture(element, theme)
+  if (localName === 'grpSp') return parseGroupShape(element, theme)
+  if (localName === 'cxnSp') return parseConnector(element)
+  if (localName === 'graphicFrame') {
+    return parseChartFromGraphicFrame(element) || parseTable(element, theme)
   }
   return null
 }
@@ -551,7 +447,11 @@ function parsePicture(pic: Element, _theme: any): PPTXElement | null {
 
   // 获取ID
   let cNvPr = nvPicPr?.getElementsByTagName('p:cNvPr')[0] || nvPicPr?.getElementsByTagName('cNvPr')[0]
+  if (cNvPr?.getAttribute('hidden') === '1') return null
   const id = cNvPr?.getAttribute('id') || `image-${Date.now()}-${Math.random()}`
+  const rotation = parseRotation(xfrm)
+  const flipH = xfrm?.getAttribute('flipH') === '1'
+  const flipV = xfrm?.getAttribute('flipV') === '1'
 
   // 获取图片关系ID（处理命名空间）
   let blip = blipFill.getElementsByTagName('a:blip')[0] || blipFill.getElementsByTagName('blip')[0]
@@ -578,6 +478,16 @@ function parsePicture(pic: Element, _theme: any): PPTXElement | null {
     }
   }
 
+  const srcRect = findElement(blipFill, 'a:srcRect', 'srcRect')
+  const crop = srcRect ? {
+    left: parseInt(srcRect.getAttribute('l') || '0') / 1000,
+    top: parseInt(srcRect.getAttribute('t') || '0') / 1000,
+    right: parseInt(srcRect.getAttribute('r') || '0') / 1000,
+    bottom: parseInt(srcRect.getAttribute('b') || '0') / 1000
+  } : undefined
+
+  const hasTile = !!findElement(blipFill, 'a:tile', 'tile')
+
   return {
     type: 'image',
     id,
@@ -585,8 +495,13 @@ function parsePicture(pic: Element, _theme: any): PPTXElement | null {
     y: getUnitValue(y),
     width: getUnitValue(cx),
     height: getUnitValue(cy),
+    rotation,
+    flipH,
+    flipV,
     src: '', // 将在解析器中填充
-    blipRelId: blipRelId || undefined
+    blipRelId: blipRelId || undefined,
+    crop,
+    fit: hasTile ? 'cover' : 'fill'
   } as any
 }
 
@@ -717,35 +632,12 @@ function parseVideoElement(pic: Element, _theme: any): PPTXElement | null {
 function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
   const elements: PPTXElement[] = []
 
-  // 解析组内的形状
-  let shapes = grpSp.getElementsByTagName('p:sp')
-  if (shapes.length === 0) {
-    shapes = grpSp.getElementsByTagName('sp')
-  }
-  for (let i = 0; i < shapes.length; i++) {
-    const element = parseShape(shapes[i], theme)
-    if (element) {
-      elements.push(element)
-    }
-  }
-
-  // 解析组内的图片（包括视频）
-  let pics = grpSp.getElementsByTagName('p:pic')
-  if (pics.length === 0) {
-    pics = grpSp.getElementsByTagName('pic')
-  }
-  for (let i = 0; i < pics.length; i++) {
-    // 检测是否为视频元素
-    if (isVideoElement(pics[i])) {
-      const element = parseVideoElement(pics[i], theme)
-      if (element) {
-        elements.push(element)
-      }
-    } else {
-      const element = parsePicture(pics[i], theme)
-      if (element) {
-        elements.push(element)
-      }
+  for (const child of getDirectElementChildren(grpSp)) {
+    const parsed = parseDrawableElement(child, theme)
+    if (Array.isArray(parsed)) {
+      elements.push(...parsed)
+    } else if (parsed) {
+      elements.push(parsed)
     }
   }
 
@@ -1826,4 +1718,3 @@ function parseTableStyle(tbl: Element, _theme: any): any {
 
   return tableStyle
 }
-

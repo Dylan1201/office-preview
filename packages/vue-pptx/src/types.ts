@@ -121,6 +121,13 @@ export interface PPTXImageElement extends PPTXElement {
   type: 'image'
   src: string
   contentType?: string
+  crop?: {
+    left: number
+    top: number
+    right: number
+    bottom: number
+  }
+  fit?: 'fill' | 'contain' | 'cover'
 }
 
 /**
