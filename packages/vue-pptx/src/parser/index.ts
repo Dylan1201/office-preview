@@ -917,6 +917,13 @@ export class PPTXParser {
             const pathW = parseInt(path.getAttribute('w') || '0')
             const pathH = parseInt(path.getAttribute('h') || '0')
 
+            // path 坐标系是 EMU（与 cx/cy 同单位），但元素最终以 px 渲染
+            // 所以缩放比 = 元素 px 尺寸 / path EMU 尺寸
+            const widthPx = cx / 9525
+            const heightPx = cy / 9525
+            const scaleX = pathW ? widthPx / pathW : 0
+            const scaleY = pathH ? heightPx / pathH : 0
+
             // 转换路径命令
             const cmds: string[] = []
             for (let i = 0; i < path.children.length; i++) {
@@ -928,9 +935,6 @@ export class PPTXParser {
                 if (pt) {
                   const x = parseInt(pt.getAttribute('x') || '0')
                   const y = parseInt(pt.getAttribute('y') || '0')
-                  // 缩放到实际尺寸
-                  const scaleX = cx / pathW
-                  const scaleY = cy / pathH
                   cmds.push(`M ${x * scaleX} ${y * scaleY}`)
                 }
               } else if (localName === 'lnTo') {
@@ -938,8 +942,6 @@ export class PPTXParser {
                 if (pt) {
                   const x = parseInt(pt.getAttribute('x') || '0')
                   const y = parseInt(pt.getAttribute('y') || '0')
-                  const scaleX = cx / pathW
-                  const scaleY = cy / pathH
                   cmds.push(`L ${x * scaleX} ${y * scaleY}`)
                 }
               } else if (localName === 'close') {
@@ -968,60 +970,12 @@ export class PPTXParser {
         }
       }
 
-      // 首先检查 fillRef（填充样式引用）- 它优先于直接填充
-      const style = sp.getElementsByTagName('p:style')[0] || sp.getElementsByTagName('style')[0]
-      let hasFillRef = false
-      if (style) {
-        const fillRef = style.getElementsByTagName('a:fillRef')[0] || style.getElementsByTagName('fillRef')[0]
-        if (fillRef) {
-          hasFillRef = true
-          const idx = parseInt(fillRef.getAttribute('idx') || '0')
-          
-          console.log(`[PPTX Layout] Shape has fillRef with idx=${idx}`)
-          
-          // PPTX fillRef idx 的含义：
-          // 0: 无填充 (noFill)
-          // 1-999: 纯色填充 (对应的 fillStyle 索引)
-          // 1000+: 渐变填充 (idx - 1000 对应的 fillStyle 索引)
-          let fillStyleIndex = -1
-          if (idx === 0) {
-            // 无填充
-            hasNoFill = true
-            console.log(`[PPTX Layout] fillRef idx=0 means noFill`)
-          } else if (idx > 0 && idx < 1000) {
-            // 纯色填充，索引从 0 开始
-            fillStyleIndex = idx - 1
-          } else if (idx >= 1000) {
-            // 渐变填充，需要减去 1000
-            fillStyleIndex = idx - 1000
-          }
-          
-          // 从theme文件获取对应的填充样式
-          if (fillStyleIndex >= 0 && this.theme && this.theme.fillStyles && this.theme.fillStyles[fillStyleIndex]) {
-            const fillStyle = this.theme.fillStyles[fillStyleIndex]
-            console.log(`[PPTX Layout] Using fillStyle at index ${fillStyleIndex}: type=${fillStyle.type}`)
-            if (fillStyle.type === 'linear') {
-              gradient = {
-                type: 'linear',
-                colors: fillStyle.colors,
-                angle: fillStyle.angle || 0
-              }
-            } else if (fillStyle.type === 'solid') {
-              fill = fillStyle.color
-              console.log(`[PPTX Layout] Using solid fill color: ${fill}`)
-            }
-          } else if (fillStyleIndex >= 0) {
-            console.log(`[PPTX Layout] fillStyle not found at index ${fillStyleIndex}, available styles: ${this.theme?.fillStyles?.length || 0}`)
-          }
-        }
-      }
-
-      // 如果没有 fillRef，检查直接填充
-      if (!hasFillRef && !hasNoFill) {
+      // OOXML 规范：spPr 直接填充（solidFill/gradFill/blipFill）优先于 style/fillRef
+      // 先解析 spPr 里的直接填充
+      if (!hasNoFill) {
         // 检查渐变填充
         const gradFill = spPr.getElementsByTagName('a:gradFill')[0] || spPr.getElementsByTagName('gradFill')[0]
         if (gradFill) {
-          // 解析渐变
           const gsLst = gradFill.getElementsByTagName('a:gsLst')[0] || gradFill.getElementsByTagName('gsLst')[0]
           if (gsLst) {
             const colors: Array<{ pos: number; color: string }> = []
@@ -1035,28 +989,52 @@ export class PPTXParser {
             }
 
             if (colors.length > 0) {
-              // 获取渐变角度
               const lin = gradFill.getElementsByTagName('a:lin')[0] || gradFill.getElementsByTagName('lin')[0]
               const angle = lin ? parseInt(lin.getAttribute('ang') || '0') : 90
+              gradient = { type: 'linear', colors, angle }
+            }
+          }
+        }
 
-              gradient = {
-                type: 'linear',
-                colors,
-                angle
+        // 如果没有渐变，解析纯色填充
+        if (!gradient) {
+          const solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
+          if (solidFill) {
+            fill = this.parseColorElement(solidFill)
+          }
+        }
+      }
+
+      // 只有 spPr 没有直接填充时，才回退到 style/fillRef
+      if (!hasNoFill && !fill && !gradient) {
+        const style = sp.getElementsByTagName('p:style')[0] || sp.getElementsByTagName('style')[0]
+        if (style) {
+          const fillRef = style.getElementsByTagName('a:fillRef')[0] || style.getElementsByTagName('fillRef')[0]
+          if (fillRef) {
+            const idx = parseInt(fillRef.getAttribute('idx') || '0')
+            let fillStyleIndex = -1
+            if (idx === 0) {
+              hasNoFill = true
+            } else if (idx > 0 && idx < 1000) {
+              fillStyleIndex = idx - 1
+            } else if (idx >= 1000) {
+              fillStyleIndex = idx - 1000
+            }
+
+            if (fillStyleIndex >= 0 && this.theme && this.theme.fillStyles && this.theme.fillStyles[fillStyleIndex]) {
+              const fillStyle = this.theme.fillStyles[fillStyleIndex]
+              if (fillStyle.type === 'linear') {
+                gradient = { type: 'linear', colors: fillStyle.colors, angle: fillStyle.angle || 0 }
+              } else if (fillStyle.type === 'solid') {
+                fill = fillStyle.color
               }
             }
           }
         }
       }
 
-      // 如果没有渐变，解析纯色填充
-      if (!hasFillRef && !gradient) {
-        const solidFill = spPr.getElementsByTagName('a:solidFill')[0] || spPr.getElementsByTagName('solidFill')[0]
-
-        if (!hasNoFill && solidFill) {
-          fill = this.parseColorElement(solidFill)
-        }
-      }
+      // 兼容旧代码引用 hasFillRef（已不再使用，但后续条件判断仍引用）
+      const hasFillRef = false
 
       // 占位符即使没有填充也要返回（它们会从幻灯片继承内容）
       // 普通形状如果没有填充或渐变则跳过

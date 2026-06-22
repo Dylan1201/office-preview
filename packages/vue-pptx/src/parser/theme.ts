@@ -138,6 +138,7 @@ export function parseThemeXML(xmlString: string): any {
   // 辅助函数：解析颜色
   const parseColor = (colorElem: Element, baseColor?: string): string => {
     const srgbClr = findByLocalName(colorElem, 'srgbClr')
+    const sysClr = findByLocalName(colorElem, 'sysClr')
     const schemeClr = findByLocalName(colorElem, 'schemeClr')
 
     if (srgbClr) {
@@ -158,6 +159,18 @@ export function parseThemeXML(xmlString: string): any {
         }
         return color
       }
+    } else if (sysClr) {
+      // 系统颜色：优先使用 lastClr（实际 RGB 值），如 windowText(黑)/window(白)
+      const lastClr = sysClr.getAttribute('lastClr')
+      if (lastClr) {
+        return '#' + lastClr
+      }
+      const sysClrMap: Record<string, string> = {
+        'windowText': '#000000',
+        'window': '#FFFFFF'
+      }
+      const sysVal = sysClr.getAttribute('val') || ''
+      return sysClrMap[sysVal] || baseColor || '#000000'
     } else if (schemeClr) {
       const val = schemeClr.getAttribute('val')
       

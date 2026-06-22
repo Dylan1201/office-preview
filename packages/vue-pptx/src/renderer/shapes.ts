@@ -296,17 +296,25 @@ function createDonut(
 
 /**
  * 渲染平行四边形
+ * OOXML parallelogram 默认 adj=25%（ECMA-376），但 WPS/PowerPoint 实际行为：
+ * 当 avLst 为空（无 adj）时，渲染为水平矩形（adj=0）。
+ * 仅当 avLst 显式给出 adj 时才生成倾斜效果。
  */
 function createParallelogram(
   width: number,
   height: number,
   fill?: string,
   stroke?: string,
-  strokeWidth?: number
+  strokeWidth?: number,
+  adjust?: number
 ): SVGElement {
   const svg = createSVG(width, height)
-  // 斜切角度默认为宽度的15%
-  const skew = width * 0.15
+  let skew: number
+  if (typeof adjust === 'number' && adjust > 0) {
+    skew = (adjust / 100000) * Math.min(width, height)
+  } else {
+    skew = 0
+  }
   const d = `M ${skew} 0 L ${width} 0 L ${width - skew} ${height} L 0 ${height} Z`
   const path = createPath(d, fill, stroke, strokeWidth)
   svg.appendChild(path)
@@ -402,7 +410,9 @@ function createCube(
 }
 
 /**
- * 渲染环形箭头
+ * 渲染环形箭头（circularArrow）
+ * WPS 实测：起点 7-8 点(155°)，终点 12-1 点(5°)，顺时针经过 12 点(270°)，跨度约 210°
+ * 弧形是空心线条（描边），比圆形边框更细，结束端带箭头三角形
  */
 function createCircularArrow(
   width: number,
@@ -414,18 +424,47 @@ function createCircularArrow(
   const svg = createSVG(width, height)
   const cx = width / 2
   const cy = height / 2
-  const r = Math.min(width, height) / 2 - 10
-  const d = `
-    M ${cx + r} ${cy}
-    A ${r} ${r} 0 1 1 ${cx - r * 0.7} ${cy - r * 0.7}
-    L ${cx - r * 0.4} ${cy - r * 0.9}
-    L ${cx - r * 0.9} ${cy - r * 0.4}
-    L ${cx - r * 0.7} ${cy - r * 0.7}
-    A ${r * 0.5} ${r * 0.5} 0 1 0 ${cx + r * 0.5} ${cy}
-    Z
-  `.trim().replace(/\s+/g, ' ')
-  const path = createPath(d, fill, stroke, strokeWidth)
-  svg.appendChild(path)
+  const R = Math.min(width, height) / 2 - 4
+  // 起点 155°，终点 5°（顺时针经过 270°/上方，跨度约 210°）
+  const startAng = (155 * Math.PI) / 180
+  const endAng = (5 * Math.PI) / 180
+  const sx = cx + R * Math.cos(startAng)
+  const sy = cy + R * Math.sin(startAng)
+  const ex = cx + R * Math.cos(endAng)
+  const ey = cy + R * Math.sin(endAng)
+
+  // 弧线粗细
+  const lineW = strokeWidth && strokeWidth > 0 ? strokeWidth : Math.max(2, R * 0.025)
+
+  // 主弧线（描边，顺时针经过上方 = sweep=1 large=1）
+  const arc = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  arc.setAttribute('d', `M ${sx} ${sy} A ${R} ${R} 0 1 1 ${ex} ${ey}`)
+  arc.setAttribute('fill', 'none')
+  arc.setAttribute('stroke', fill || stroke || '#ffffff')
+  arc.setAttribute('stroke-width', lineW.toString())
+  arc.setAttribute('stroke-linecap', 'butt')
+  svg.appendChild(arc)
+
+  // 箭头三角形（结束端，沿切线方向延伸）
+  // 顺时针切线方向 = endAng + 90°
+  const tipAng = endAng + Math.PI / 2
+  const tipLen = lineW * 4
+  const tipHalfW = lineW * 1.8
+  const baseCX = ex + lineW * Math.cos(tipAng)
+  const baseCY = ey + lineW * Math.sin(tipAng)
+  const apexX = baseCX + tipLen * Math.cos(tipAng)
+  const apexY = baseCY + tipLen * Math.sin(tipAng)
+  const perpAng = tipAng + Math.PI / 2
+  const base1X = baseCX + tipHalfW * Math.cos(perpAng)
+  const base1Y = baseCY + tipHalfW * Math.sin(perpAng)
+  const base2X = baseCX - tipHalfW * Math.cos(perpAng)
+  const base2Y = baseCY - tipHalfW * Math.sin(perpAng)
+
+  const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  arrow.setAttribute('d', `M ${apexX} ${apexY} L ${base1X} ${base1Y} L ${base2X} ${base2Y} Z`)
+  arrow.setAttribute('fill', fill || stroke || '#ffffff')
+  svg.appendChild(arrow)
+
   return svg
 }
 
@@ -438,7 +477,8 @@ export function createShapeElement(
   height: number,
   fill?: string,
   stroke?: string,
-  strokeWidth?: number
+  strokeWidth?: number,
+  adjust?: number
 ): SVGElement | null {
   const type = shapeType.toLowerCase()
 
@@ -475,7 +515,7 @@ export function createShapeElement(
 
     case 'parallelogram':
     case 'parallelogram4':
-      return createParallelogram(width, height, fill, stroke, strokeWidth)
+      return createParallelogram(width, height, fill, stroke, strokeWidth, adjust)
 
     case 'trapezoid':
     case 'trapezoid4':

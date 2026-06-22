@@ -40,6 +40,16 @@ export interface PptxEmits {
 export type PPTXElementType = 'text' | 'image' | 'shape' | 'chart' | 'table' | 'group' | 'video' | 'connector'
 
 /**
+ * 外阴影（来自 a:effectLst/a:outerShdw）
+ */
+export interface PPTXShadow {
+  color: string // 形如 'rgba(0,0,0,0.4)' 或 '#000000'
+  blur: number // px
+  offsetX: number // px（正=右）
+  offsetY: number // px（正=下）
+}
+
+/**
  * PPTX元素基类
  */
 export interface PPTXElement {
@@ -53,6 +63,7 @@ export interface PPTXElement {
   zIndex?: number
   flipH?: boolean
   flipV?: boolean
+  shadow?: PPTXShadow
 }
 
 /**
@@ -88,6 +99,7 @@ export interface PPTXTextElement extends PPTXElement {
   paragraphs?: PPTXParagraph[] // 所有段落
   style: PPTXTextStyle
   verticalAlign?: 'top' | 'middle' | 'bottom' // 来自 bodyPr anchor
+  autoFit?: boolean // bodyPr 下的 spAutoFit：文字框高度自适应内容
   // 形状视觉属性（文本框带有背景时）
   shapeType?: string
   fill?: string
@@ -112,6 +124,10 @@ export interface PPTXTextStyle {
   underline?: boolean
   align?: 'left' | 'center' | 'right' | 'justify'
   verticalAlign?: 'top' | 'middle' | 'bottom'
+  lineHeight?: number // 行距倍数（如 1.5）
+  letterSpacing?: number // 字符间距（pt，可正可负）
+  spaceBefore?: number // 段前间距（pt）
+  spaceAfter?: number // 段后间距（pt）
 }
 
 /**

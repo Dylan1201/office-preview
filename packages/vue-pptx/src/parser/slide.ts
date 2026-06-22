@@ -4,7 +4,8 @@ import type {
   PPTXVideoElement,
   PPTXTableElement,
   PPTXConnectorElement,
-  PPTXParagraph
+  PPTXParagraph,
+  PPTXShadow
 } from '../types'
 import { getElementText, parseColor, getUnitValue } from './element'
 
@@ -162,18 +163,80 @@ function getParagraphText(p: Element): string {
 }
 
 /**
+ * 从 txBody 的 lstStyle 获取默认段落样式（lvl1pPr/defRPr）
+ * 用于 rPr/pPr 都未指定时的回退（如 PART x 这类只有 lstStyle 定义的文本）
+ */
+function parseListStyleDefaults(txBody: Element | null, theme: any): any {
+  if (!txBody) return {}
+  const lstStyle = findElement(txBody, 'a:lstStyle', 'lstStyle')
+  if (!lstStyle) return {}
+  const lvl1pPr = findElement(lstStyle, 'a:lvl1pPr', 'lvl1pPr')
+  if (!lvl1pPr) return {}
+  const defRPr = findElement(lvl1pPr, 'a:defRPr', 'defRPr')
+  if (!defRPr) return {}
+  const out: any = {}
+  const sz = defRPr.getAttribute('sz')
+  if (sz) out.fontSize = parseInt(sz) * 4 / 300
+  const latin = findElement(defRPr, 'a:latin', 'latin')
+  const ea = findElement(defRPr, 'a:ea', 'ea')
+  const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface')
+  if (fontFamily) out.fontFamily = fontFamily
+  if (defRPr.getAttribute('b') === '1') out.bold = true
+  if (defRPr.getAttribute('i') === '1') out.italic = true
+  const u = defRPr.getAttribute('u')
+  if (u && u !== 'none') out.underline = true
+  const spc = defRPr.getAttribute('spc')
+  if (spc) out.letterSpacing = parseInt(spc) * 4 / 300
+  const solidFill = findChildByLocalName(defRPr, 'solidFill')
+  if (solidFill) {
+    const color = parseColor(solidFill, theme)
+    if (color) out.color = color
+  }
+  const algn = lvl1pPr.getAttribute('algn')
+  if (algn) out.align = algn
+  return out
+}
+
+/**
  * 从单个段落解析文本样式
  */
-function parseTextStyleFromParagraph(p: Element, theme: any): any {
+function parseTextStyleFromParagraph(p: Element, theme: any, txBody?: Element | null): any {
   const style: any = {}
+  const lstDefaults = parseListStyleDefaults(txBody || null, theme)
+  // 先填入 lstStyle 默认值（最低优先级）
+  Object.assign(style, lstDefaults)
   const pPr = findElement(p, 'a:pPr', 'pPr')
   if (pPr) {
     const algn = pPr.getAttribute('algn')
     if (algn) style.align = algn
+    // 行距 lnSpc：spcPct（千分比）或 spcPts（pt）
+    const lnSpc = findElement(pPr, 'a:lnSpc', 'lnSpc')
+    if (lnSpc) {
+      const spcPct = findElement(lnSpc, 'a:spcPct', 'spcPct')
+      const spcPts = findElement(lnSpc, 'a:spcPts', 'spcPts')
+      if (spcPct) {
+        const val = parseInt(spcPct.getAttribute('val') || '0')
+        if (val > 0) style.lineHeight = val / 100000
+      } else if (spcPts) {
+        const val = parseInt(spcPts.getAttribute('val') || '0')
+        if (val > 0) style.lineHeight = -val / 100 // 负数表示绝对 pt（renderer 转换）
+      }
+    }
+    // 段前/段后 spcBef / spcAft（spcPts，单位 1/100 pt）
+    const spcBef = findElement(pPr, 'a:spcBef', 'spcBef')
+    if (spcBef) {
+      const pts = findElement(spcBef, 'a:spcPts', 'spcPts')
+      if (pts) style.spaceBefore = parseInt(pts.getAttribute('val') || '0') * 4 / 300
+    }
+    const spcAft = findElement(pPr, 'a:spcAft', 'spcAft')
+    if (spcAft) {
+      const pts = findElement(spcAft, 'a:spcPts', 'spcPts')
+      if (pts) style.spaceAfter = parseInt(pts.getAttribute('val') || '0') * 4 / 300
+    }
     const defRPr = findElement(pPr, 'a:defRPr', 'defRPr')
     if (defRPr) {
       const sz = defRPr.getAttribute('sz')
-      if (sz) style.fontSize = parseInt(sz) / 100
+      if (sz) style.fontSize = parseInt(sz) * 4 / 300
       const latin = findElement(defRPr, 'a:latin', 'latin')
       const ea = findElement(defRPr, 'a:ea', 'ea')
       const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface')
@@ -182,6 +245,9 @@ function parseTextStyleFromParagraph(p: Element, theme: any): any {
       if (defRPr.getAttribute('i') === '1') style.italic = true
       const u = defRPr.getAttribute('u')
       if (u && u !== 'none') style.underline = true
+      // 字符间距 spc（单位 1/100 pt）
+      const spc = defRPr.getAttribute('spc')
+      if (spc) style.letterSpacing = parseInt(spc) * 4 / 300
       const solidFill = findChildByLocalName(defRPr, 'solidFill')
       if (solidFill) {
         const color = parseColor(solidFill, theme)
@@ -196,7 +262,7 @@ function parseTextStyleFromParagraph(p: Element, theme: any): any {
     const rPr = findElement(r, 'a:rPr', 'rPr')
     if (rPr) {
       const sz = rPr.getAttribute('sz')
-      if (sz) style.fontSize = parseInt(sz) / 100
+      if (sz) style.fontSize = parseInt(sz) * 4 / 300
       const latin = findElement(rPr, 'a:latin', 'latin')
       const ea = findElement(rPr, 'a:ea', 'ea')
       const fontFamily = ea?.getAttribute('typeface') || latin?.getAttribute('typeface')
@@ -205,6 +271,8 @@ function parseTextStyleFromParagraph(p: Element, theme: any): any {
       if (rPr.getAttribute('i') === '1') style.italic = true
       const u = rPr.getAttribute('u')
       if (u && u !== 'none') style.underline = true
+      const spc = rPr.getAttribute('spc')
+      if (spc) style.letterSpacing = parseInt(spc) * 4 / 300
       const solidFill = findChildByLocalName(rPr, 'solidFill')
       if (solidFill) {
         const color = parseColor(solidFill, theme)
@@ -240,7 +308,7 @@ function parseAllParagraphs(txBody: Element, theme: any): PPTXParagraph[] {
   for (let i = 0; i < pElements.length; i++) {
     const p = pElements[i]
     const text = getParagraphText(p)
-    const style = parseTextStyleFromParagraph(p, theme)
+    const style = parseTextStyleFromParagraph(p, theme, txBody)
     const fragments = parseTextFragments(p, theme)
     paragraphs.push({ text, fragments, style })
   }
@@ -305,6 +373,91 @@ function parseGradientWithRef(sp: Element, spPr: Element, theme: any): any | und
 }
 
 /**
+ * 解析外阴影 a:effectLst/a:outerShdw → PPTXShadow
+ * blurRad/dist 单位为 EMU（914400 EMU = 1 英寸 = 96 px），dir 为 1/60000 度
+ */
+function parseShadow(spPr: Element): PPTXShadow | undefined {
+  const effectLst = findElement(spPr, 'a:effectLst', 'effectLst')
+  if (!effectLst) return undefined
+  const outerShdw = findElement(effectLst, 'a:outerShdw', 'outerShdw')
+  if (!outerShdw) return undefined
+  const blurRad = parseInt(outerShdw.getAttribute('blurRad') || '0')
+  const dist = parseInt(outerShdw.getAttribute('dist') || '0')
+  const dir60000 = parseInt(outerShdw.getAttribute('dir') || '0')
+  // 颜色：srgbClr / prstClr / schemeClr，可能带 alpha
+  let color = 'rgba(0,0,0,0.4)'
+  let alpha = 1
+  const srgb = findElement(outerShdw, 'a:srgbClr', 'srgbClr')
+  const prstClr = findElement(outerShdw, 'a:prstClr', 'prstClr')
+  const schemeClr = findElement(outerShdw, 'a:schemeClr', 'schemeClr')
+  let baseColor = ''
+  if (srgb) baseColor = '#' + (srgb.getAttribute('val') || '000000')
+  else if (prstClr) baseColor = parseColor(prstClr, {})
+  else if (schemeClr) baseColor = parseColor(schemeClr, {})
+  if (baseColor) {
+    // 找 alpha 子元素
+    const alphaEl = findElement(srgb || prstClr || schemeClr, 'a:alpha', 'alpha')
+    if (alphaEl) {
+      const v = parseInt(alphaEl.getAttribute('val') || '100000')
+      alpha = v / 100000
+    }
+    // 解析 #RRGGBB
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(baseColor)
+    if (m) {
+      const r = parseInt(m[1].slice(0, 2), 16)
+      const g = parseInt(m[1].slice(2, 4), 16)
+      const b = parseInt(m[1].slice(4, 6), 16)
+      color = `rgba(${r},${g},${b},${alpha})`
+    } else {
+      color = baseColor
+    }
+  }
+  // EMU → px
+  const blurPx = blurRad / 9525
+  const distPx = dist / 9525
+  const dirRad = (dir60000 / 60000) * Math.PI / 180
+  // OOXML outerShdw dir: 0=右, 顺时针。CSS box-shadow: 正x=右, 正y=下
+  const offsetX = Math.cos(dirRad) * distPx
+  const offsetY = Math.sin(dirRad) * distPx
+  return { color, blur: blurPx, offsetX, offsetY }
+}
+
+/**
+ * 从 blipFill 节点解析图片关系ID、裁剪和填充模式
+ */
+function parseBlipFillData(blipFill: Element): { blipRelId?: string; crop?: any; hasTile: boolean; hasStretch: boolean } {
+  let blip = blipFill.getElementsByTagName('a:blip')[0] || blipFill.getElementsByTagName('blip')[0]
+  let blipRelId: string | undefined
+  if (blip) {
+    const embedAttr = blip.getAttribute('r:embed')
+      || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed')
+      || blip.getAttribute('embed')
+    if (embedAttr) {
+      blipRelId = embedAttr
+    } else {
+      for (let i = 0; i < blip.attributes.length; i++) {
+        const attr = blip.attributes[i]
+        const attrName = attr.name || attr.localName || ''
+        if (attrName === 'r:embed' || attrName === 'embed' || attrName.endsWith(':embed')) {
+          blipRelId = attr.value
+          break
+        }
+      }
+    }
+  }
+  const srcRect = findElement(blipFill, 'a:srcRect', 'srcRect')
+  const crop = srcRect ? {
+    left: parseInt(srcRect.getAttribute('l') || '0') / 1000,
+    top: parseInt(srcRect.getAttribute('t') || '0') / 1000,
+    right: parseInt(srcRect.getAttribute('r') || '0') / 1000,
+    bottom: parseInt(srcRect.getAttribute('b') || '0') / 1000
+  } : undefined
+  const hasTile = !!findElement(blipFill, 'a:tile', 'tile')
+  const hasStretch = !!findElement(blipFill, 'a:stretch', 'stretch')
+  return { blipRelId, crop, hasTile, hasStretch }
+}
+
+/**
  * 解析形状
  */
 function parseShape(sp: Element, theme: any): PPTXElement | null {
@@ -313,6 +466,18 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
   let txBody = sp.getElementsByTagName('p:txBody')[0] || sp.getElementsByTagName('txBody')[0]
   if (!spPr) spPr = findDescendantsByLocalName(sp, 'spPr')[0] || null
   if (!spPr) { console.log('[PPTX Parser] Shape skipped: no spPr found'); return null }
+
+  // 关键：spPr 中可能直接包含 blipFill（图片填充），此时按图片处理
+  let blipFill = spPr.getElementsByTagName('a:blipFill')[0] || spPr.getElementsByTagName('p:blipFill')[0] || spPr.getElementsByTagName('blipFill')[0]
+  if (!blipFill) {
+    const spChildren = spPr.getElementsByTagName('*')
+    for (let i = 0; i < spChildren.length; i++) {
+      if (spChildren[i].localName === 'blipFill') {
+        blipFill = spChildren[i]
+        break
+      }
+    }
+  }
 
   // 占位符信息
   let phType = ''
@@ -343,12 +508,35 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
   // ID
   let cNvPr = nvSpPr?.getElementsByTagName('p:cNvPr')[0] || nvSpPr?.getElementsByTagName('cNvPr')[0]
   if (!cNvPr) cNvPr = findDescendantsByLocalName(sp, 'cNvPr')[0] || null
+  if (cNvPr?.getAttribute('hidden') === '1') return null
   const id = cNvPr?.getAttribute('id') || `shape-${Date.now()}-${Math.random()}`
+
+  // 关键：blipFill（图片填充）的 sp 形状应渲染为图片
+  if (blipFill) {
+    const { blipRelId, crop, hasTile, hasStretch } = parseBlipFillData(blipFill)
+    if (blipRelId) {
+      const imageElement: any = {
+        type: 'image',
+        id,
+        x: getUnitValue(x), y: getUnitValue(y),
+        width: getUnitValue(cx), height: getUnitValue(cy),
+        rotation, flipH, flipV,
+        src: '',
+        blipRelId,
+        crop,
+        fit: hasTile ? 'cover' : (hasStretch ? 'fill' : 'fill'),
+        _fromShape: true
+      }
+      return imageElement
+    }
+  }
 
   // 解析形状视觉属性（不论是否有文本都需要）
   const shapeType = parseShapeType(spPr)
+  const adjust = parseFirstAdjust(spPr)
   const fill = parseFillWithRef(sp, spPr, theme)
   const gradient = parseGradientWithRef(sp, spPr, theme)
+  const shadow = parseShadow(spPr)
   const stroke = parseStroke(spPr, theme)
   let strokeWidth = 0
   if (stroke) {
@@ -356,6 +544,18 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     if (ln) { const w = ln.getAttribute('w'); if (w) strokeWidth = parseInt(w) / 9525 }
   }
   const verticalAlign = txBody ? parseVerticalAlign(txBody) : undefined
+
+  // 检查 spAutoFit（文本框高度自适应内容）
+  let autoFit = false
+  if (txBody) {
+    const bodyPr = findElement(txBody, 'a:bodyPr', 'bodyPr')
+    if (bodyPr) {
+      for (let i = 0; i < bodyPr.children.length; i++) {
+        const ln = bodyPr.children[i].localName
+        if (ln === 'spAutoFit') { autoFit = true; break }
+      }
+    }
+  }
 
   // 提取自定义路径
   let customPath: string | undefined
@@ -380,11 +580,12 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
         type: 'text', id,
         x: getUnitValue(x), y: getUnitValue(y), width: getUnitValue(cx), height: getUnitValue(cy),
         text, fragments, paragraphs: paragraphs.length > 1 ? paragraphs : undefined,
-        style, verticalAlign, rotation, flipH, flipV,
+        style, verticalAlign, autoFit, rotation, flipH, flipV,
         shapeType: shapeType !== 'rect' ? shapeType : undefined,
         fill, gradient,
         stroke, strokeWidth: strokeWidth || (stroke ? 1 : undefined),
-        phType, phIdx
+        shadow,
+        adjust, phType, phIdx
       } as any
     }
   }
@@ -394,7 +595,8 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     type: 'shape', id,
     x: getUnitValue(x), y: getUnitValue(y), width: getUnitValue(cx), height: getUnitValue(cy),
     shapeType, fill, gradient, stroke, strokeWidth: strokeWidth || 1,
-    rotation, flipH, flipV, phType, phIdx, customPath
+    shadow,
+    rotation, flipH, flipV, adjust, phType, phIdx, customPath
   }
   if (phType) return element
   if (element.width === 0 && element.height === 0) return null
@@ -632,12 +834,69 @@ function parseVideoElement(pic: Element, _theme: any): PPTXElement | null {
 function parseGroupShape(grpSp: Element, theme: any): PPTXElement[] {
   const elements: PPTXElement[] = []
 
+  // 读取 group 变换参数：off/ext 为外（slide）坐标系，chOff/chExt 为子坐标系
+  const grpSpPr = findElement(grpSp, 'p:grpSpPr', 'a:grpSpPr', 'grpSpPr')
+  const xfrm = grpSpPr ? findElement(grpSpPr, 'a:xfrm', 'xfrm') : null
+  const off = xfrm ? findElement(xfrm, 'a:off', 'off') : null
+  const ext = xfrm ? findElement(xfrm, 'a:ext', 'ext') : null
+  const chOff = xfrm ? findElement(xfrm, 'a:chOff', 'chOff') : null
+  const chExt = xfrm ? findElement(xfrm, 'a:chExt', 'chExt') : null
+  const groupRot = parseRotation(xfrm)
+  const flipH = xfrm?.getAttribute('flipH') === '1'
+  const flipV = xfrm?.getAttribute('flipV') === '1'
+
+  // 缩放（无量纲）
+  const extCx = ext ? parseInt(ext.getAttribute('cx') || '0') : 0
+  const extCy = ext ? parseInt(ext.getAttribute('cy') || '0') : 0
+  const chExtCx = chExt ? parseInt(chExt.getAttribute('cx') || '0') : 0
+  const chExtCy = chExt ? parseInt(chExt.getAttribute('cy') || '0') : 0
+  const scaleX = chExtCx ? extCx / chExtCx : 1
+  const scaleY = chExtCy ? extCy / chExtCy : 1
+
+  // 偏移（转 px，与已解析的子元素坐标单位一致）
+  const offXpx = getUnitValue(off ? parseInt(off.getAttribute('x') || '0') : 0)
+  const offYpx = getUnitValue(off ? parseInt(off.getAttribute('y') || '0') : 0)
+  const chOffXpx = getUnitValue(chOff ? parseInt(chOff.getAttribute('x') || '0') : 0)
+  const chOffYpx = getUnitValue(chOff ? parseInt(chOff.getAttribute('y') || '0') : 0)
+
+  // group 在 slide 中的 box（用于 flip 时围绕中心镜像）
+  const groupWidthPx = extCx / 9525
+  const groupHeightPx = extCy / 9525
+  const groupCx = offXpx + groupWidthPx / 2
+  const groupCy = offYpx + groupHeightPx / 2
+
+  const needsTransform = !!(off || chOff) || groupRot !== 0 || flipH || flipV
+
   for (const child of getDirectElementChildren(grpSp)) {
     const parsed = parseDrawableElement(child, theme)
-    if (Array.isArray(parsed)) {
-      elements.push(...parsed)
-    } else if (parsed) {
-      elements.push(parsed)
+    const items: PPTXElement[] = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : [])
+    for (const el of items) {
+      if (el) {
+        if (needsTransform) {
+          const e: any = el
+          // 子坐标系 -> slide 坐标系
+          e.x = offXpx + (e.x - chOffXpx) * scaleX
+          e.y = offYpx + (e.y - chOffYpx) * scaleY
+          e.width = e.width * scaleX
+          e.height = e.height * scaleY
+          // group flip：围绕 group 中心镜像
+          if (flipH) {
+            const rightEdge = e.x + e.width
+            e.x = 2 * groupCx - rightEdge
+            e.flipH = !e.flipH
+          }
+          if (flipV) {
+            const botEdge = e.y + e.height
+            e.y = 2 * groupCy - botEdge
+            e.flipV = !e.flipV
+          }
+          // group 旋转叠加到子元素
+          if (groupRot) {
+            e.rotation = (e.rotation || 0) + groupRot
+          }
+        }
+        elements.push(el)
+      }
     }
   }
 
@@ -868,6 +1127,8 @@ function parseTextFragments(p: Element, theme: any): Array<{ text: string; color
  */
 function parseTextStyle(txBody: Element, theme: any): any {
   const style: any = {}
+  // 先填入 lstStyle 默认值（最低优先级，用于 rPr/pPr 未指定时的回退）
+  Object.assign(style, parseListStyleDefaults(txBody, theme))
 
   let p = txBody.getElementsByTagName('a:p')[0] || txBody.getElementsByTagName('p')[0]
   if (!p) return style
@@ -879,13 +1140,75 @@ function parseTextStyle(txBody: Element, theme: any): any {
     if (algn) {
       style.align = algn
     }
-    
+
+    // 行距 lnSpc：spcPct（千分比）或 spcPts（pt）
+    let lnSpc = pPr.getElementsByTagName('a:lnSpc')[0] || pPr.getElementsByTagName('lnSpc')[0]
+    if (!lnSpc) {
+      const allChildren = pPr.getElementsByTagName('*')
+      for (let j = 0; j < allChildren.length; j++) {
+        if (allChildren[j].localName === 'lnSpc') { lnSpc = allChildren[j]; break }
+      }
+    }
+    if (lnSpc) {
+      let spcPct = lnSpc.getElementsByTagName('a:spcPct')[0] || lnSpc.getElementsByTagName('spcPct')[0]
+      let spcPts = lnSpc.getElementsByTagName('a:spcPts')[0] || lnSpc.getElementsByTagName('spcPts')[0]
+      if (!spcPct && !spcPts) {
+        const allChildren = lnSpc.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'spcPct') { spcPct = allChildren[j]; break }
+          if (allChildren[j].localName === 'spcPts') { spcPts = allChildren[j]; break }
+        }
+      }
+      if (spcPct) {
+        const val = parseInt(spcPct.getAttribute('val') || '0')
+        if (val > 0) style.lineHeight = val / 100000
+      } else if (spcPts) {
+        const val = parseInt(spcPts.getAttribute('val') || '0')
+        if (val > 0) style.lineHeight = -val / 100
+      }
+    }
+    // 段前/段后
+    let spcBef = pPr.getElementsByTagName('a:spcBef')[0] || pPr.getElementsByTagName('spcBef')[0]
+    if (!spcBef) {
+      const allChildren = pPr.getElementsByTagName('*')
+      for (let j = 0; j < allChildren.length; j++) {
+        if (allChildren[j].localName === 'spcBef') { spcBef = allChildren[j]; break }
+      }
+    }
+    if (spcBef) {
+      let pts = spcBef.getElementsByTagName('a:spcPts')[0] || spcBef.getElementsByTagName('spcPts')[0]
+      if (!pts) {
+        const allChildren = spcBef.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'spcPts') { pts = allChildren[j]; break }
+        }
+      }
+      if (pts) style.spaceBefore = parseInt(pts.getAttribute('val') || '0') * 4 / 300
+    }
+    let spcAft = pPr.getElementsByTagName('a:spcAft')[0] || pPr.getElementsByTagName('spcAft')[0]
+    if (!spcAft) {
+      const allChildren = pPr.getElementsByTagName('*')
+      for (let j = 0; j < allChildren.length; j++) {
+        if (allChildren[j].localName === 'spcAft') { spcAft = allChildren[j]; break }
+      }
+    }
+    if (spcAft) {
+      let pts = spcAft.getElementsByTagName('a:spcPts')[0] || spcAft.getElementsByTagName('spcPts')[0]
+      if (!pts) {
+        const allChildren = spcAft.getElementsByTagName('*')
+        for (let j = 0; j < allChildren.length; j++) {
+          if (allChildren[j].localName === 'spcPts') { pts = allChildren[j]; break }
+        }
+      }
+      if (pts) style.spaceAfter = parseInt(pts.getAttribute('val') || '0') * 4 / 300
+    }
+
     // 获取默认文本属性
     const defRPr = pPr.getElementsByTagName('a:defRPr')[0] || pPr.getElementsByTagName('defRPr')[0]
     if (defRPr) {
       const sz = defRPr.getAttribute('sz')
       if (sz) {
-        style.fontSize = parseInt(sz) / 100
+        style.fontSize = parseInt(sz) * 4 / 300
       }
       
       // 解析字体
@@ -912,7 +1235,12 @@ function parseTextStyle(txBody: Element, theme: any): any {
       if (u && u !== 'none') {
         style.underline = true
       }
-      
+
+      const spc = defRPr.getAttribute('spc')
+      if (spc) {
+        style.letterSpacing = parseInt(spc) * 4 / 300
+      }
+
       // 获取默认颜色
       let solidFill = defRPr.getElementsByTagName('a:solidFill')[0] ||
                       defRPr.getElementsByTagName('solidFill')[0]
@@ -956,7 +1284,7 @@ function parseTextStyle(txBody: Element, theme: any): any {
     if (rPr) {
       const sz = rPr.getAttribute('sz')
       if (sz) {
-        style.fontSize = parseInt(sz) / 100
+        style.fontSize = parseInt(sz) * 4 / 300
       }
 
       // 解析字体：依次查找 latin、ea、cs 的 typeface 属性
@@ -1011,6 +1339,11 @@ function parseTextStyle(txBody: Element, theme: any): any {
       const u = rPr.getAttribute('u')
       if (u && u !== 'none') {
         style.underline = true
+      }
+
+      const spc = rPr.getAttribute('spc')
+      if (spc) {
+        style.letterSpacing = parseInt(spc) * 4 / 300
       }
 
       // 尝试获取 solidFill 或 gradFill
@@ -1120,6 +1453,22 @@ function parseShapeType(spPr: Element): string | undefined {
   }
 
   return undefined
+}
+
+/**
+ * 解析预设几何的第一个调整值（如 roundRect 的圆角 adj）
+ * adj fmla 形如 "val 50000"，单位为千分比（50000 = 50%）
+ */
+function parseFirstAdjust(spPr: Element): number | undefined {
+  const prstGeom = findElement(spPr, 'a:prstGeom', 'prstGeom')
+  if (!prstGeom) return undefined
+  const avLst = findElement(prstGeom, 'a:avLst', 'avLst')
+  if (!avLst) return undefined
+  const gd = findElement(avLst, 'a:gd', 'gd')
+  if (!gd) return undefined
+  const fmla = gd.getAttribute('fmla') || ''
+  const m = fmla.match(/val\s+(\d+)/)
+  return m ? parseInt(m[1]) : undefined
 }
 
 /**
@@ -1417,9 +1766,10 @@ function parseCustomPath(custGeom: Element, width: number, height: number): stri
   const pathWidth = parseInt(path.getAttribute('w') || '0') || width
   const pathHeight = parseInt(path.getAttribute('h') || '0') || height
 
-  // 缩放因子：从EMU单位转换到像素
-  const scaleX = width / pathWidth
-  const scaleY = height / pathHeight
+  // width/height（=cx/cy）和 pathWidth/pathHeight 都是 EMU，比值无量纲，
+  // 还要再除 9525 才能把 path 顶点（EMU）转成 px
+  const scaleX = (width / pathWidth) / 9525
+  const scaleY = (height / pathHeight) / 9525
 
   let d = ''
   const children = path.childNodes

@@ -13,12 +13,66 @@ import { createShapeElement } from './shapes';
 import { renderChart } from './charts';
 
 /**
+ * PPT 字体名 -> 系统/Web 字体名映射
+ * PPT 内部常使用中文/厂商字体名（"思源宋体 CN Medium"），
+ * 浏览器找不到时回退到等价的系统字体。
+ */
+const FONT_FALLBACKS: Record<string, string> = {
+  '思源宋体 cn': '"Source Han Serif SC", "Noto Serif SC", "Source Han Serif CN", serif',
+  '思源黑体 cn': '"Source Han Sans SC", "Noto Sans SC", "Source Han Sans CN", sans-serif',
+  '思源黑体 cn regular': '"Source Han Sans SC", "Noto Sans SC", sans-serif',
+  '思源宋体 cn medium': '"Source Han Serif SC", "Noto Serif SC", serif',
+  '思源黑体 cn medium': '"Source Han Sans SC", "Noto Sans SC", sans-serif',
+  '思源黑体 cn bold': '"Source Han Sans SC", "Noto Sans SC", sans-serif',
+  '等线': 'DengXian, "Microsoft YaHei", sans-serif',
+  '微软雅黑': '"Microsoft YaHei", sans-serif',
+  '宋体': 'SimSun, "Source Han Serif SC", serif',
+  '黑体': 'SimHei, "Source Han Sans SC", sans-serif',
+  '楷体': 'KaiTi, STKAITI, serif',
+}
+
+/**
+ * 把 PPT 内字体名规范化为 CSS font-family 字符串
+ */
+function resolveFontFamily(name: string | undefined): string | undefined {
+  if (!name) return undefined
+  // 去掉 +mn-/+mj- 等占位符
+  if (name.startsWith('+')) return undefined
+  const key = name.toLowerCase().trim()
+  if (FONT_FALLBACKS[key]) return FONT_FALLBACKS[key]
+  // 未匹配的字体名加 serif/sans-serif 兜底
+  return `${name}, serif`
+}
+
+/**
+ * OOXML algn 值 → CSS text-align
+ */
+function alignToCss(algn: string | undefined): string | undefined {
+  if (!algn) return undefined
+  switch (algn) {
+    case 'l': return 'left'
+    case 'r': return 'right'
+    case 'ctr': return 'center'
+    case 'just': return 'justify'
+    case 'dist': return 'justify'
+    default: return algn
+  }
+}
+
+/**
  * 应用旋转和翻转到元素
+ *
+ * 注意：对纯文本元素（type === 'text'）不应用 flipH/flipV。
+ * 原因：很多 PPT 的文本框 XML 带 flipH="1"（PowerPoint 保存时可能误加），
+ * WPS 渲染时会忽略这个属性，让文字保持正向可读。
+ * 如果对文字也应用 scaleX(-1)，文字会左右镜像变成乱码。
+ * 形状/图片/连接线仍正常应用 flip。
  */
 function applyTransform(el: HTMLElement, element: PPTXElement): void {
   const transforms: string[] = []
-  if (element.flipH) transforms.push('scaleX(-1)')
-  if (element.flipV) transforms.push('scaleY(-1)')
+  const isText = (element as any).type === 'text'
+  if (!isText && element.flipH) transforms.push('scaleX(-1)')
+  if (!isText && element.flipV) transforms.push('scaleY(-1)')
   if (element.rotation) {
     transforms.push(`rotate(${element.rotation}deg)`)
   }
@@ -116,8 +170,14 @@ export class PPTXRenderer {
     el.style.left = `${element.x}px`;
     el.style.top = `${element.y}px`;
     el.style.width = `${element.width}px`;
-    el.style.height = `${element.height}px`;
-    el.style.overflow = 'hidden';
+    if (element.autoFit) {
+      el.style.minHeight = `${element.height}px`;
+      el.style.height = 'fit-content';
+      el.style.overflow = 'visible';
+    } else {
+      el.style.height = `${element.height}px`;
+      el.style.overflow = 'hidden';
+    }
     el.style.boxSizing = 'border-box';
 
     // 形状背景（文本框的填充/渐变/边框）
@@ -132,10 +192,17 @@ export class PPTXRenderer {
     if (textEl.stroke) {
       el.style.border = `${textEl.strokeWidth || 1}px solid ${textEl.stroke}`;
     }
+    if (textEl.shadow) {
+      const s = textEl.shadow
+      el.style.boxShadow = `${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color}`
+    }
     if (textEl.shapeType) {
       const st = textEl.shapeType.toLowerCase()
       if (st === 'ellipse' || st === 'oval') el.style.borderRadius = '50%'
-      else if (st === 'roundrectangle' || st === 'roundedrectangle') el.style.borderRadius = '10%'
+      else if (st === 'roundrect' || st === 'roundrectangle' || st === 'roundedrectangle') {
+        const adj = textEl.adjust || 16667
+        el.style.borderRadius = `${(adj / 100000) * Math.min(element.width, element.height)}px`
+      }
     }
 
     // 垂直对齐
@@ -147,17 +214,28 @@ export class PPTXRenderer {
     // 水平对齐
     const style = element.style || {};
     if (style.align) {
-      el.style.textAlign = (style.align as string) === 'dist' ? 'justify' : style.align
+      if ((style.align as string) === 'dist') {
+        // OOXML dist = 分散对齐，需强制最后一行也撑满
+        el.style.textAlign = 'justify'
+        el.style.textAlignLast = 'justify'
+        ;(el.style as any).textJustify = 'inter-character'
+      } else {
+        el.style.textAlign = alignToCss(style.align as string) || style.align
+      }
     } else {
       el.style.textAlign = 'center'
     }
 
     // 字体样式
     if (style.fontSize) el.style.fontSize = `${style.fontSize}px`;
-    if (style.fontFamily) el.style.fontFamily = style.fontFamily;
+    if (style.fontFamily) el.style.fontFamily = resolveFontFamily(style.fontFamily) || style.fontFamily;
     if (style.bold) el.style.fontWeight = 'bold';
     if (style.italic) el.style.fontStyle = 'italic';
     if (style.underline) el.style.textDecoration = 'underline';
+    if (style.lineHeight !== undefined) {
+      el.style.lineHeight = style.lineHeight > 0 ? `${style.lineHeight}` : `${-style.lineHeight}px`
+    }
+    if (style.letterSpacing !== undefined) el.style.letterSpacing = `${style.letterSpacing}px`
 
     // 渲染多段落
     if (element.paragraphs && element.paragraphs.length > 1) {
@@ -167,15 +245,28 @@ export class PPTXRenderer {
 
         // 段落对齐
         if (para.style?.align) {
-          pEl.style.textAlign = (para.style.align as string) === 'dist' ? 'justify' : para.style.align
+          if ((para.style.align as string) === 'dist') {
+            pEl.style.textAlign = 'justify'
+            pEl.style.textAlignLast = 'justify'
+            ;(pEl.style as any).textJustify = 'inter-character'
+          } else {
+            pEl.style.textAlign = alignToCss(para.style.align as string) || para.style.align
+          }
         }
 
         // 段落字体样式
         if (para.style?.fontSize) pEl.style.fontSize = `${para.style.fontSize}px`
-        if (para.style?.fontFamily) pEl.style.fontFamily = para.style.fontFamily
+        if (para.style?.fontFamily) pEl.style.fontFamily = resolveFontFamily(para.style.fontFamily) || para.style.fontFamily
         if (para.style?.bold) pEl.style.fontWeight = 'bold'
         if (para.style?.italic) pEl.style.fontStyle = 'italic'
         if (para.style?.underline) pEl.style.textDecoration = 'underline'
+        if (para.style?.lineHeight !== undefined) {
+          const lh = para.style.lineHeight
+          pEl.style.lineHeight = lh > 0 ? `${lh}` : `${-lh}px`
+        }
+        if (para.style?.letterSpacing !== undefined) pEl.style.letterSpacing = `${para.style.letterSpacing}px`
+        if (para.style?.spaceBefore !== undefined) pEl.style.marginTop = `${para.style.spaceBefore}px`
+        if (para.style?.spaceAfter !== undefined) pEl.style.marginBottom = `${para.style.spaceAfter}px`
 
         if (para.fragments && para.fragments.length > 0) {
           para.fragments.forEach(frag => {
@@ -216,6 +307,10 @@ export class PPTXRenderer {
 
       if (hasDifferentStyles) {
         const container = document.createElement('span')
+        container.style.display = 'block'
+        container.style.width = '100%'
+        // 继承父元素 textAlign
+        if (el.style.textAlign) container.style.textAlign = el.style.textAlign
         for (const fragment of element.fragments) {
           const span = document.createElement('span')
           span.textContent = fragment.text
@@ -224,6 +319,11 @@ export class PPTXRenderer {
             span.style.backgroundColor = fragment.backgroundColor
             span.style.padding = '0 2px'
           }
+          if (fragment.fontSize) span.style.fontSize = `${fragment.fontSize}px`
+          if (fragment.bold) span.style.fontWeight = 'bold'
+          if (fragment.italic) span.style.fontStyle = 'italic'
+          if (fragment.underline) span.style.textDecoration = 'underline'
+          if (fragment.fontFamily) span.style.fontFamily = resolveFontFamily(fragment.fontFamily) || fragment.fontFamily
           container.appendChild(span)
         }
         el.appendChild(container)
@@ -295,7 +395,8 @@ export class PPTXRenderer {
     if (element.shapeType) {
       const svgEl = createShapeElement(
         element.shapeType, element.width, element.height,
-        element.fill, element.stroke, element.strokeWidth
+        element.fill, element.stroke, element.strokeWidth,
+        (element as any).adjust
       )
       if (svgEl) {
         // 如果有渐变，替换 SVG 中的 fill
@@ -333,6 +434,10 @@ export class PPTXRenderer {
         container.style.top = `${element.y}px`
         container.style.width = `${element.width}px`
         container.style.height = `${element.height}px`
+        if (element.shadow) {
+          const s = element.shadow
+          container.style.boxShadow = `${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color}`
+        }
         container.appendChild(svgEl)
         applyTransform(container, element)
         return container
@@ -352,7 +457,10 @@ export class PPTXRenderer {
     if (element.shapeType) {
       const st = element.shapeType.toLowerCase()
       if (st === 'ellipse' || st === 'oval') shapeEl.style.borderRadius = '50%'
-      else if (st === 'roundrectangle' || st === 'roundedrectangle') shapeEl.style.borderRadius = '10%'
+      else if (st === 'roundrect' || st === 'roundrectangle' || st === 'roundedrectangle') {
+        const adj = (element as any).adjust || 16667
+        shapeEl.style.borderRadius = `${(adj / 100000) * Math.min(element.width, element.height)}px`
+      }
       else if (st === 'custom') shapeEl.style.borderRadius = '50%'
     }
 
@@ -373,6 +481,11 @@ export class PPTXRenderer {
 
     if (!isDonut && element.stroke) {
       shapeEl.style.border = `${element.strokeWidth || 1}px solid ${element.stroke}`;
+    }
+
+    if (element.shadow) {
+      const s = element.shadow
+      shapeEl.style.boxShadow = `${s.offsetX}px ${s.offsetY}px ${s.blur}px ${s.color}`
     }
 
     applyTransform(shapeEl, element)
@@ -442,10 +555,13 @@ export class PPTXRenderer {
    * 渲染连接线/线条元素
    */
   private renderConnectorElement(element: PPTXConnectorElement): HTMLElement {
+    // SVG width/height 为 0 时浏览器不渲染内容，强制至少 1px
+    const svgW = Math.max(1, Math.abs(element.width))
+    const svgH = Math.max(1, Math.abs(element.height))
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.setAttribute('width', element.width.toString())
-    svg.setAttribute('height', element.height.toString())
-    svg.setAttribute('viewBox', `0 0 ${element.width} ${element.height}`)
+    svg.setAttribute('width', svgW.toString())
+    svg.setAttribute('height', svgH.toString())
+    svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`)
     svg.style.display = 'block'
     svg.style.overflow = 'visible'
 
@@ -607,7 +723,7 @@ export class PPTXRenderer {
     if (style.backgroundColor) element.style.backgroundColor = style.backgroundColor;
     if (style.color) element.style.color = style.color;
     if (style.fontSize) element.style.fontSize = `${style.fontSize}px`;
-    if (style.fontFamily) element.style.fontFamily = style.fontFamily;
+    if (style.fontFamily) element.style.fontFamily = resolveFontFamily(style.fontFamily) || style.fontFamily;
     if (style.bold) element.style.fontWeight = 'bold';
     if (style.italic) element.style.fontStyle = 'italic';
     if (style.align) element.style.textAlign = style.align;
