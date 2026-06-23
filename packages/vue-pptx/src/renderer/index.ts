@@ -567,8 +567,9 @@ export class PPTXRenderer {
 
     // 线条
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-    const p0 = element.points[0] || { x: 0, y: element.height / 2 }
-    const p1 = element.points[1] || { x: element.width, y: element.height / 2 }
+    // OOXML line 默认几何: (0,0) → (w,h) 对角线
+    const p0 = element.points[0] || { x: 0, y: 0 }
+    const p1 = element.points[1] || { x: element.width, y: element.height }
 
     // 使用元素的实际坐标（已经过EMU到像素转换）
     line.setAttribute('x1', p0.x.toString())

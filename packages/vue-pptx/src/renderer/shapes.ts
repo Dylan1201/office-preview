@@ -296,9 +296,9 @@ function createDonut(
 
 /**
  * 渲染平行四边形
- * OOXML parallelogram 默认 adj=25%（ECMA-376），但 WPS/PowerPoint 实际行为：
- * 当 avLst 为空（无 adj）时，渲染为水平矩形（adj=0）。
- * 仅当 avLst 显式给出 adj 时才生成倾斜效果。
+ * 按 OOXML ECMA-376 规范：prstGeom prst="parallelogram" 默认 adj=25%
+ * 当 avLst 为空时使用规范默认值 25000（25%）；显式 adj 优先。
+ * skew = (adj / 100000) × min(width, height)
  */
 function createParallelogram(
   width: number,
@@ -309,12 +309,8 @@ function createParallelogram(
   adjust?: number
 ): SVGElement {
   const svg = createSVG(width, height)
-  let skew: number
-  if (typeof adjust === 'number' && adjust > 0) {
-    skew = (adjust / 100000) * Math.min(width, height)
-  } else {
-    skew = 0
-  }
+  const adjValue = typeof adjust === 'number' && adjust > 0 ? adjust : 25000
+  const skew = (adjValue / 100000) * Math.min(width, height)
   const d = `M ${skew} 0 L ${width} 0 L ${width - skew} ${height} L 0 ${height} Z`
   const path = createPath(d, fill, stroke, strokeWidth)
   svg.appendChild(path)

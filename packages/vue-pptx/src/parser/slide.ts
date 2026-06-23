@@ -1511,16 +1511,15 @@ function parseConnector(cxnSp: Element): PPTXConnectorElement | null {
     }
 
     // 构建连接线端点（使用相对于元素边界的坐标）
+    // OOXML 规范: prst="line" 默认几何是从 (0,0) 到 (w,h) 的对角线
+    // flipV/flipH 不在此处预先应用，由 renderer 的 applyTransform 统一通过 scaleY(-1)/scaleX(-1) 处理
+    // 否则会与容器翻转叠加导致双重翻转
     const w = getUnitValue(cx)
     const h = getUnitValue(cy)
     const points = [
-      { x: 0, y: h / 2 },
-      { x: w, y: h / 2 }
+      { x: 0, y: 0 },
+      { x: w, y: h }
     ]
-    if (cy > 0 && cx === 0) {
-      points[0] = { x: 0, y: 0 }
-      points[1] = { x: 0, y: h }
-    }
 
     // 解析线条样式
     const ln = findElement(spPr, 'a:ln', 'ln')
