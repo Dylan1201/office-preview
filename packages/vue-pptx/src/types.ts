@@ -100,6 +100,7 @@ export interface PPTXTextElement extends PPTXElement {
   style: PPTXTextStyle
   verticalAlign?: 'top' | 'middle' | 'bottom' // 来自 bodyPr anchor
   autoFit?: boolean // bodyPr 下的 spAutoFit：文字框高度自适应内容
+  vert?: string // 来自 bodyPr vert：文字方向（eaVert/vert/vert270/wordArtVert/wordArtVertRtl），控制横排/竖排
   // 形状视觉属性（文本框带有背景时）
   shapeType?: string
   fill?: string

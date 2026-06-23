@@ -170,11 +170,13 @@ export class PPTXRenderer {
     el.style.left = `${element.x}px`;
     el.style.top = `${element.y}px`;
     el.style.width = `${element.width}px`;
-    if (element.autoFit) {
+    if (element.autoFit && !element.vert) {
       el.style.minHeight = `${element.height}px`;
       el.style.height = 'fit-content';
       el.style.overflow = 'visible';
     } else {
+      // 竖排(vert)文字必须以固定高度作为"到框底换列"的边界，
+      // 否则 fit-content 高度会让文字单列无限往下排、不换列
       el.style.height = `${element.height}px`;
       el.style.overflow = 'hidden';
     }
@@ -207,9 +209,27 @@ export class PPTXRenderer {
 
     // 垂直对齐
     const vAlign = textEl.verticalAlign || 'middle'
-    el.style.display = 'flex';
-    el.style.flexDirection = 'column';
-    el.style.justifyContent = vAlign === 'top' ? 'flex-start' : vAlign === 'bottom' ? 'flex-end' : 'center';
+    if (textEl.vert) {
+      // 竖排文字：必须用块布局，flex 会破坏"按高度换列"机制导致文字挤在单列
+      el.style.display = 'block'
+      // anchor(上/中/下)在竖排下沿列方向：短文本用 line-height 占位近似居中，
+      // 长文本自然撑满，anchor 影响小（暂不强行居中以免再引入 flex）
+    } else {
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.justifyContent = vAlign === 'top' ? 'flex-start' : vAlign === 'bottom' ? 'flex-end' : 'center';
+    }
+
+    // 文字方向（vert：竖排）— eaVert=东亚竖排, vert=竖排(旋转90°), vert270=反向竖排
+    if (textEl.vert) {
+      const v = textEl.vert
+      // vert270 文字自下而上；其余自上而下
+      el.style.writingMode = v === 'vert270' ? 'vertical-lr' : 'vertical-rl'
+      // eaVert / wordArtVert 要求字符直立（含拉丁字母），用 upright；vert 则按 mixed 旋转
+      if (v === 'eaVert' || v === 'wordArtVert' || v === 'wordArtVertRtl') {
+        ;(el.style as any).textOrientation = 'upright'
+      }
+    }
 
     // 水平对齐
     const style = element.style || {};

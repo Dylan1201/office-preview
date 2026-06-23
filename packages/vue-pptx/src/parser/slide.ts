@@ -145,6 +145,18 @@ function parseVerticalAlign(txBody: Element): 'top' | 'middle' | 'bottom' {
 }
 
 /**
+ * 解析 bodyPr 的 vert 属性（文字方向）
+ * eaVert=东亚竖排（字符直立）; vert=竖排(每行旋转90°); vert270=反向竖排;
+ * wordArtVert/wordArtVertRtl=艺术字竖排; 默认 horz 为横排
+ */
+function parseTextDirection(txBody: Element): string | undefined {
+  const bodyPr = findElement(txBody, 'a:bodyPr', 'bodyPr')
+  if (!bodyPr) return undefined
+  const vert = bodyPr.getAttribute('vert')
+  return vert && vert !== 'horz' ? vert : undefined
+}
+
+/**
  * 获取单个段落的文本
  */
 function getParagraphText(p: Element): string {
@@ -544,6 +556,7 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
     if (ln) { const w = ln.getAttribute('w'); if (w) strokeWidth = parseInt(w) / 9525 }
   }
   const verticalAlign = txBody ? parseVerticalAlign(txBody) : undefined
+  const vert = txBody ? parseTextDirection(txBody) : undefined
 
   // 检查 spAutoFit（文本框高度自适应内容）
   let autoFit = false
@@ -580,7 +593,7 @@ function parseShape(sp: Element, theme: any): PPTXElement | null {
         type: 'text', id,
         x: getUnitValue(x), y: getUnitValue(y), width: getUnitValue(cx), height: getUnitValue(cy),
         text, fragments, paragraphs: paragraphs.length > 1 ? paragraphs : undefined,
-        style, verticalAlign, autoFit, rotation, flipH, flipV,
+        style, verticalAlign, vert, autoFit, rotation, flipH, flipV,
         shapeType: shapeType !== 'rect' ? shapeType : undefined,
         fill, gradient,
         stroke, strokeWidth: strokeWidth || (stroke ? 1 : undefined),
