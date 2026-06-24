@@ -9,6 +9,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: pages
@@ -58,6 +59,25 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Cleanup stale github-pages artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(github.rest.actions.listArtifacts, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const a of artifacts) {
+              if (a.name === 'github-pages' && a.workflow_run?.id !== context.runId) {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: a.id,
+                });
+                core.info(`Deleted stale artifact id=${a.id} from run ${a.workflow_run?.id}`);
+              }
+            }
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

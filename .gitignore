@@ -8,3 +8,9 @@ coverage
 .vscode
 .idea
 *.local
+
+# 本地调试/排查内容 (不进入公开仓库)
+.claude/
+/*.py
+/png/
+/*.png
