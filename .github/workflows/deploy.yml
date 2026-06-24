@@ -29,16 +29,18 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
       - name: Build demo
         env:
-          # 改成你的 GitHub 仓库名，前后都要带斜杠
-          VITE_BASE_PATH: /office-preview/
+          # 自定义域名根路径部署，base 用 '/'
+          # 若不用自定义域名（仓库子路径访问），改成 '/<repo>/'
+          VITE_BASE_PATH: /
         run: pnpm --filter @vue3-office/demo build
 
       - name: Setup Pages
