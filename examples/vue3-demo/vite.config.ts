@@ -3,6 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
+  // GitHub Pages 部署需要子路径，本地开发用 '/'
+  // 在 GitHub Actions 中通过 VITE_BASE_PATH 环境变量传入 '/<repo>/'
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [vue()],
   resolve: {
     alias: {

@@ -1,96 +1,69 @@
-# 一键发布脚本 - 需要先登录
-
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 
-echo ======================================
-echo   Vue3 Office Preview - 发布脚本
-echo   目标: http://localhost:4873
-echo ======================================
+REM ============================================
+REM  @vue-office-plus/preview 一键发布到 npm 官方源
+REM  使用前请先在独立终端执行：
+REM    npm login --registry=https://registry.npmjs.org/ --scope=@vue-office-plus
+REM ============================================
+
+set REGISTRY=https://registry.npmjs.org/
+set PKG_DIR=%~dp0..\packages\vue-preview
+set PKG_NAME=@vue-office-plus/preview
+
+echo ============================================
+echo   发布 %PKG_NAME% 到 npm 官方源
+echo ============================================
 echo.
 
-REM 设置npm仓库
-echo [1/4] 设置npm仓库...
-call npm config set registry http://localhost:4873 2>nul
+REM [1/3] 检查登录
+echo [1/3] 检查 npm 登录状态...
+set NPM_USER=
+for /f "delims=" %%i in ('call npm whoami --registry=%REGISTRY% 2^>nul') do set NPM_USER=%%i
+if "%NPM_USER%"=="" (
+    echo.
+    echo   [X] 未登录或登录已过期
+    echo.
+    echo   请先在独立 PowerShell/CMD 窗口执行：
+    echo     npm login --registry=%REGISTRY% --scope=@vue-office-plus
+    echo.
+    echo   npm 9+ 会输出一个浏览器登录 URL，在浏览器完成确认即可。
+    echo.
+    pause
+    exit /b 1
+)
+echo   [v] 已登录：%NPM_USER%
+echo.
 
-REM 检查是否已登录
-findstr /C:"localhost:4873" %USERPROFILE%\.npmrc | findstr /C:"_auth" >nul
+REM [2/3] 构建
+echo [2/3] 构建聚合包...
+cd /d "%PKG_DIR%"
+call npm run build
 if errorlevel 1 (
     echo.
-    echo [2/4] 需要登录verdaccio...
+    echo   [X] 构建失败
+    pause
+    exit /b 1
+)
+echo   [v] 构建完成
+echo.
+
+REM [3/3] 发布
+echo [3/3] 发布 %PKG_NAME%...
+call npm publish --registry=%REGISTRY% --access public
+if errorlevel 1 (
     echo.
-    echo 请按提示输入用户名和密码：
-    echo   - 默认用户名: admin
-    echo   - 密码: (您设置的密码)
-    echo   - 邮箱: (任意邮箱)
-    echo.
-    call npm adduser --registry http://localhost:4873
-    if errorlevel 1 (
-        echo.
-        echo 登录失败！请检查verdaccio是否正常运行
-        pause
-        exit /b 1
-    )
-) else (
-    echo [2/4] 已登录，跳过
+    echo   [X] 发布失败
+    echo   常见原因：版本号已存在 / 未开通 2FA / 网络问题
+    pause
+    exit /b 1
 )
 
 echo.
-echo [3/4] 开始发布包...
+echo ============================================
+echo   [v] 发布成功！
+echo   https://www.npmjs.com/package/%PKG_NAME%
+echo ============================================
 echo.
-
-set BASE_DIR=D:\code\demo\vue3-office-preview
-set COUNT=0
-
-REM 发布core包
-set /a COUNT+=1
-echo  [!COUNT!/4] 发布 @vue3-office/core...
-cd /d "%BASE_DIR%\core"
-call npm publish --registry http://localhost:4873 2>nul
-if errorlevel 1 (
-    echo   ✗ 发布失败
-) else (
-    echo   ✓ 发布成功
-)
-
-REM 发布docx包
-set /a COUNT+=1
-echo  [!COUNT!/4] 发布 @vue3-office/docx...
-cd /d "%BASE_DIR%\packages\vue-docx"
-call npm publish --registry http://localhost:4873 2>nul
-if errorlevel 1 (
-    echo   ✗ 发布失败
-) else (
-    echo   ✓ 发布成功
-)
-
-REM 发布excel包
-set /a COUNT+=1
-echo  [!COUNT!/4] 发布 @vue3-office/excel...
-cd /d "%BASE_DIR%\packages\vue-excel"
-call npm publish --registry http://localhost:4873 2>nul
-if errorlevel 1 (
-    echo   ✗ 发布失败
-) else (
-    echo   ✓ 发布成功
-)
-
-REM 发布pptx包
-set /a COUNT+=1
-echo  [!COUNT!/4] 发布 @vue3-office/pptx...
-cd /d "%BASE_DIR%\packages\vue-pptx"
-call npm publish --registry http://localhost:4873 2>nul
-if errorlevel 1 (
-    echo   ✗ 发布失败
-) else (
-    echo   ✓ 发布成功
-)
-
-echo.
-echo [4/4] 发布完成！
-echo.
-echo 访问 http://localhost:4873 查看已发布的包
-echo.
-echo ======================================
 pause
