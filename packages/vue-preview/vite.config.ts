@@ -13,9 +13,15 @@ export default defineConfig({
       }
     }),
     dts({
-      entryRoot: 'src',
+      entryRoot: '../',
       outDir: 'lib',
       tsconfigPath: resolve(__dirname, 'tsconfig.json'),
+      include: [
+        'src/**/*',
+        '../vue-docx/src/**/*',
+        '../vue-excel/src/**/*',
+        '../vue-pptx/src/**/*'
+      ],
       insertTypesEntry: true,
       cleanVueFileName: true,
       copyDtsFiles: true
@@ -26,16 +32,32 @@ export default defineConfig({
     outDir: 'lib',
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'VueOfficeDocx',
-      fileName: 'vue-office-docx',
+      name: 'VueOfficePreview',
+      fileName: 'vue-office-preview',
       formats: ['es', 'umd']
     },
     rollupOptions: {
-      external: ['vue', 'docx-preview'],
+      external: [
+        'vue',
+        'jszip',
+        'docx-preview',
+        'exceljs',
+        'xlsx',
+        'lodash',
+        'dayjs',
+        'tinycolor2'
+      ],
       output: {
+        exports: 'named',
         globals: {
           vue: 'Vue',
-          'docx-preview': 'DocxPreview'
+          jszip: 'JSZip',
+          'docx-preview': 'DocxPreview',
+          exceljs: 'ExcelJS',
+          xlsx: 'XLSX',
+          lodash: '_',
+          dayjs: 'dayjs',
+          tinycolor2: 'tinycolor'
         }
       }
     }

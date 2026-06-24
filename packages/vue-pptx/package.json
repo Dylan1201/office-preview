@@ -1,13 +1,26 @@
 {
-  "name": "@vue3-office/pptx",
-  "version": "1.0.0",
+  "name": "@vue-office-plus/pptx",
+  "version": "0.1.0",
   "description": "Vue3 PPT文档预览组件",
-  "main": "lib/index.umd.js",
-  "module": "lib/index.js",
+  "main": "lib/vue-office-pptx.umd.js",
+  "module": "lib/vue-office-pptx.mjs",
   "types": "lib/index.d.ts",
+  "style": "lib/style.css",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": {
+      "import": "./lib/vue-office-pptx.mjs",
+      "require": "./lib/vue-office-pptx.umd.js",
+      "types": "./lib/index.d.ts"
+    },
+    "./style.css": "./lib/style.css",
+    "./lib/*": "./lib/*"
+  },
   "files": [
     "lib",
-    "src"
+    "README.md"
   ],
   "scripts": {
     "clean": "rimraf lib",
@@ -25,6 +38,7 @@
     "rimraf": "^5.0.5",
     "typescript": "^5.3.2",
     "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.7.0",
     "vue": "^3.3.8"
   },
   "keywords": [
@@ -36,6 +50,19 @@
     "preview",
     "预览"
   ],
-  "author": "Emperor's Dev",
-  "license": "MIT"
+  "author": "Dylan <1057626658@qq.com>",
+  "license": "MIT",
+  "homepage": "https://gitee.com/dylan1201/office-preview#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/dylan1201/office-preview.git",
+    "directory": "packages/vue-pptx"
+  },
+  "bugs": {
+    "url": "https://gitee.com/dylan1201/office-preview/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

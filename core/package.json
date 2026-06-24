@@ -1,11 +1,12 @@
 {
-  "name": "@vue3-office/core",
-  "version": "1.0.0",
+  "name": "@vue-office-plus/core",
+  "version": "0.1.0",
   "description": "Vue3 Office预览插件 - 共享工具库",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "clean": "rimraf dist",
@@ -20,6 +21,19 @@
     "office",
     "utils"
   ],
-  "author": "Emperor's Dev",
-  "license": "MIT"
+  "author": "Dylan",
+  "license": "MIT",
+  "homepage": "https://gitee.com/dylan1201/office-preview#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/dylan1201/office-preview.git",
+    "directory": "core"
+  },
+  "bugs": {
+    "url": "https://gitee.com/dylan1201/office-preview/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

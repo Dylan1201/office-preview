@@ -1,11 +1,11 @@
-# @vue3-office/excel
+# @vue-office-plus/excel
 
 Vue3 Excel文档预览组件
 
 ## 安装
 
 ```bash
-npm install @vue3-office/excel
+npm install @vue-office-plus/excel
 ```
 
 ## 使用
@@ -21,7 +21,8 @@ npm install @vue3-office/excel
 </template>
 
 <script setup>
-import VueOfficeExcel from '@vue3-office/excel'
+import VueOfficeExcel from '@vue-office-plus/excel'
+import '@vue-office-plus/excel/lib/style.css'
 
 const excelUrl = ref('path/to/spreadsheet.xlsx')
 const onRendered = () => console.log('渲染完成')

@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./lib",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationDir": "./lib",
+    "composite": true,
+    "emitDeclarationOnly": false,
+    "noEmit": false
+  },
+  "include": [
+    "src/**/*",
+    "../vue-docx/src/**/*",
+    "../vue-excel/src/**/*",
+    "../vue-pptx/src/**/*"
+  ],
+  "exclude": ["node_modules", "lib"]
+}
