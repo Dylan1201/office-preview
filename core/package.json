@@ -1,5 +1,5 @@
 {
-  "name": "@vue-office-plus/core",
+  "name": "@dylan1201/vue-core",
   "version": "0.1.0",
   "description": "Vue3 Office预览插件 - 共享工具库",
   "main": "dist/index.js",
@@ -23,14 +23,14 @@
   ],
   "author": "Dylan",
   "license": "MIT",
-  "homepage": "https://gitee.com/dylan1201/office-preview#readme",
+  "homepage": "https://github.com/Dylan1201/office-preview#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://gitee.com/dylan1201/office-preview.git",
+    "url": "git+https://github.com/Dylan1201/office-preview.git",
     "directory": "core"
   },
   "bugs": {
-    "url": "https://gitee.com/dylan1201/office-preview/issues"
+    "url": "https://github.com/Dylan1201/office-preview/issues"
   },
   "publishConfig": {
     "access": "public",

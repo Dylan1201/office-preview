@@ -1,5 +1,5 @@
 {
-  "name": "@vue-office-plus/pptx",
+  "name": "@dylan1201/vue-pptx",
   "version": "0.1.0",
   "description": "Vue3 PPT文档预览组件",
   "main": "lib/vue-office-pptx.umd.js",
@@ -52,14 +52,14 @@
   ],
   "author": "Dylan <1057626658@qq.com>",
   "license": "MIT",
-  "homepage": "https://gitee.com/dylan1201/office-preview#readme",
+  "homepage": "https://github.com/Dylan1201/office-preview#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://gitee.com/dylan1201/office-preview.git",
+    "url": "git+https://github.com/Dylan1201/office-preview.git",
     "directory": "packages/vue-pptx"
   },
   "bugs": {
-    "url": "https://gitee.com/dylan1201/office-preview/issues"
+    "url": "https://github.com/Dylan1201/office-preview/issues"
   },
   "publishConfig": {
     "access": "public",

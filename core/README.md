@@ -1,4 +1,4 @@
-# @vue-office-plus/core
+# @dylan1201/vue-core
 
 Vue3 Office预览插件 - 共享工具库
 
@@ -11,7 +11,7 @@ Vue3 Office预览插件 - 共享工具库
 ## 使用
 
 ```typescript
-import { getUrl, download, arrayBufferToBase64 } from '@vue-office-plus/core'
+import { getUrl, download, arrayBufferToBase64 } from '@dylan1201/vue-core'
 
 // 获取文件URL
 const url = getUrl(arrayBuffer)

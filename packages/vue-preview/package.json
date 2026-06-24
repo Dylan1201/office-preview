@@ -1,5 +1,5 @@
 {
-  "name": "@vue-office-plus/preview",
+  "name": "vue3-office-preview",
   "version": "0.1.0",
   "description": "Vue3 Office 文档预览聚合包 - 一站式预览 Word/Excel/PPT",
   "main": "lib/vue-office-preview.umd.js",
@@ -20,7 +20,8 @@
   },
   "files": [
     "lib",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "scripts": {
     "clean": "rimraf lib",
@@ -61,14 +62,14 @@
   ],
   "author": "Dylan <1057626658@qq.com>",
   "license": "MIT",
-  "homepage": "https://gitee.com/dylan1201/office-preview#readme",
+  "homepage": "https://github.com/Dylan1201/office-preview#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://gitee.com/dylan1201/office-preview.git",
+    "url": "git+https://github.com/Dylan1201/office-preview.git",
     "directory": "packages/vue-preview"
   },
   "bugs": {
-    "url": "https://gitee.com/dylan1201/office-preview/issues"
+    "url": "https://github.com/Dylan1201/office-preview/issues"
   },
   "publishConfig": {
     "access": "public",

@@ -1,11 +1,11 @@
-# @vue-office-plus/pptx
+# @dylan1201/vue-pptx
 
 Vue3 PPT文档预览组件（自研解析器）
 
 ## 安装
 
 ```bash
-npm install @vue-office-plus/pptx
+npm install @dylan1201/vue-pptx
 ```
 
 ## 使用
@@ -21,8 +21,8 @@ npm install @vue-office-plus/pptx
 </template>
 
 <script setup>
-import VueOfficePptx from '@vue-office-plus/pptx'
-import '@vue-office-plus/pptx/lib/style.css'
+import VueOfficePptx from '@dylan1201/vue-pptx'
+import '@dylan1201/vue-pptx/lib/style.css'
 
 const pptxUrl = ref('path/to/presentation.pptx')
 const onRendered = (pptx) => console.log('渲染完成', pptx)

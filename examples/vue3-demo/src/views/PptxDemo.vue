@@ -35,9 +35,7 @@
 import { ref } from 'vue';
 import { VueOfficePptx } from '@vue3-office/pptx';
 
-const pptxUrl = ref(
-  'http://localhost:6688/office/%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF1.pptx'
-);
+const pptxUrl = ref('');
 const currentSrc = ref<string | ArrayBuffer>('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const status = ref('');

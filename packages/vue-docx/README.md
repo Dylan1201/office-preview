@@ -1,11 +1,11 @@
-# @vue-office-plus/docx
+# @dylan1201/vue-docx
 
 Vue3 Word文档预览组件
 
 ## 安装
 
 ```bash
-npm install @vue-office-plus/docx
+npm install @dylan1201/vue-docx
 ```
 
 ## 使用
@@ -20,8 +20,8 @@ npm install @vue-office-plus/docx
 </template>
 
 <script setup>
-import VueOfficeDocx from '@vue-office-plus/docx'
-import '@vue-office-plus/docx/lib/style.css'
+import VueOfficeDocx from '@dylan1201/vue-docx'
+import '@dylan1201/vue-docx/lib/style.css'
 
 const docxUrl = ref('path/to/document.docx')
 const onRendered = () => console.log('渲染完成')
