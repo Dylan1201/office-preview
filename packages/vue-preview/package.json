@@ -1,6 +1,6 @@
 {
   "name": "vue3-office-preview",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vue3 Office 文档预览聚合包 - 一站式预览 Word/Excel/PPT",
   "main": "lib/vue-office-preview.umd.js",
   "module": "lib/vue-office-preview.mjs",
