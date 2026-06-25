@@ -13,10 +13,8 @@
     "build:docx": "lerna run build --scope @vue3-office/docx",
     "build:excel": "lerna run build --scope @vue3-office/excel",
     "build:pptx": "lerna run build --scope @vue3-office/pptx",
-    "clean": "lerna clean",
-    "lint": "eslint packages/*/src --ext .ts,.vue",
-    "prepare": "husky install",
-    "publish:all": "cd core && npm publish --registry http://localhost:4873 && cd ../packages/vue-docx && npm publish --registry http://localhost:4873 && cd ../vue-excel && npm publish --registry http://localhost:4873 && cd ../vue-pptx && npm publish --registry http://localhost:4873"
+    "build:preview": "cd packages/vue-preview && npm run build",
+    "clean": "lerna clean"
   },
   "keywords": [
     "vue",
@@ -32,23 +30,13 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
     "@vitejs/plugin-vue": "^5.0.0",
-    "@vue/compiler-sfc": "^3.3.8",
-    "eslint": "^8.54.0",
-    "eslint-plugin-vue": "^9.18.1",
-    "husky": "^8.0.3",
     "lerna": "^8.0.0",
-    "less": "^4.2.0",
-    "pptx-preview": "^1.0.7",
     "rimraf": "^5.0.5",
     "typescript": "^5.3.2",
     "vite": "^5.0.0",
     "vite-plugin-dts": "^3.7.0",
-    "vue": "^3.3.8",
-    "vue-tsc": "^1.8.25",
-    "xmldom": "^0.6.0"
+    "vue": "^3.3.8"
   },
   "engines": {
     "node": ">=16.0.0",
